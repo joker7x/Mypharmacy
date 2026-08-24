@@ -4,7 +4,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   default: { getItem: vi.fn(), setItem: vi.fn() },
 }));
 
-import { buildAlerts, calculateOrderTotal, type Medication } from "../lib/pharmacy-context";
+import { buildAlerts, buildReorderNeeds, calculateOrderTotal, type Medication, type ReorderRecord } from "../lib/pharmacy-context";
 
 const medication = (overrides: Partial<Medication> = {}): Medication => ({
   id: "med-1",
@@ -35,5 +35,16 @@ describe("حسابات الصيدلية", () => {
     const nearExpiry = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
     const alerts = buildAlerts([medication({ expiryDate: nearExpiry })]);
     expect(alerts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "expiry", severity: "high" })]));
+  });
+
+  it("يعرض الصنف الناقص لإعادة الطلب عند هبوطه بعد المبيعات", () => {
+    const needs = buildReorderNeeds([medication({ quantity: 4, reorderLevel: 8 })], []);
+    expect(needs).toEqual([expect.objectContaining({ status: "needed", resumed: false })]);
+  });
+
+  it("يبقي الصنف في انتظار التوريد ثم يعيده للنواقص عند هبوط الكمية مجددًا", () => {
+    const record: ReorderRecord = { medicationId: "med-1", quantityAtMark: 5, markedAt: "2026-08-24T12:00:00.000Z" };
+    expect(buildReorderNeeds([medication({ quantity: 5, reorderLevel: 8 })], [record])[0]).toEqual(expect.objectContaining({ status: "ordered", resumed: false }));
+    expect(buildReorderNeeds([medication({ quantity: 4, reorderLevel: 8 })], [record])[0]).toEqual(expect.objectContaining({ status: "needed", resumed: true }));
   });
 });

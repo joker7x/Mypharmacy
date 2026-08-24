@@ -18,18 +18,22 @@ export type CartItem = { medicationId: string; name: string; unitPrice: number; 
 export type Sale = { id: string; createdAt: string; items: CartItem[]; total: number; paymentMethod: "نقدي" | "بطاقة" | "محفظة" };
 export type Supplier = { id: string; name: string; company: string; phone: string; lastOrder: string };
 export type IncomingOrder = { id: string; supplierName: string; sourceType: "شركة" | "مكتب" | "مورد آخر"; referenceNumber?: string; total?: number; notes?: string; invoiceUri?: string; createdAt: string };
+export type ReorderRecord = { medicationId: string; markedAt: string; quantityAtMark: number };
+export type ReorderNeed = { medication: Medication; status: "needed" | "ordered"; resumed: boolean; orderedAt?: string };
 export type PharmacyAlert = { id: string; medicationId: string; title: string; detail: string; severity: "high" | "medium" | "low"; kind: "stock" | "expiry" };
-type PharmacyState = { medications: Medication[]; sales: Sale[]; suppliers: Supplier[]; incomingOrders: IncomingOrder[] };
+type PharmacyState = { medications: Medication[]; sales: Sale[]; suppliers: Supplier[]; incomingOrders: IncomingOrder[]; reorderRecords: ReorderRecord[] };
 
 type PharmacyContextValue = PharmacyState & {
   isReady: boolean;
   alerts: PharmacyAlert[];
+  reorderNeeds: ReorderNeed[];
   addMedication: (medication: Omit<Medication, "id">) => void;
   updateMedication: (id: string, medication: Omit<Medication, "id">) => void;
   deleteMedication: (id: string) => void;
   completeSale: (items: CartItem[], paymentMethod: Sale["paymentMethod"]) => boolean;
   addSupplier: (supplier: Omit<Supplier, "id" | "lastOrder">) => void;
   addIncomingOrder: (order: Omit<IncomingOrder, "id" | "createdAt">) => void;
+  markReorderOrdered: (medicationId: string) => void;
   restoreDemoData: () => void;
 };
 
@@ -58,6 +62,7 @@ const createDemoState = (): PharmacyState => ({
     { id: "supplier-3", name: "محمود نبيل", company: "ميديكال إمداد", phone: "0111 638 9204", lastOrder: "منذ أسبوع" },
   ],
   incomingOrders: [],
+  reorderRecords: [],
 });
 
 export const normalizePharmacyState = (stored: Partial<PharmacyState>): PharmacyState => {
@@ -67,6 +72,7 @@ export const normalizePharmacyState = (stored: Partial<PharmacyState>): Pharmacy
     sales: Array.isArray(stored.sales) ? stored.sales : demo.sales,
     suppliers: Array.isArray(stored.suppliers) ? stored.suppliers : demo.suppliers,
     incomingOrders: Array.isArray(stored.incomingOrders) ? stored.incomingOrders : [],
+    reorderRecords: Array.isArray(stored.reorderRecords) ? stored.reorderRecords : [],
   };
 };
 
@@ -81,6 +87,22 @@ export const buildAlerts = (medications: Medication[]): PharmacyAlert[] => {
     if (remainingDays <= 60) generated.push({ id: `expiry-${medication.id}`, medicationId: medication.id, title: remainingDays < 0 ? "انتهت الصلاحية" : "صلاحية قريبة", detail: remainingDays < 0 ? `${medication.name} يحتاج إلى معالجة فورية` : `${medication.name} ينتهي خلال ${remainingDays} يومًا`, severity: remainingDays <= 20 ? "high" : "medium", kind: "expiry" });
   });
   return generated.sort((a, b) => (a.severity === "high" ? -1 : 1) - (b.severity === "high" ? -1 : 1));
+};
+
+export const buildReorderNeeds = (medications: Medication[], records: ReorderRecord[]): ReorderNeed[] => {
+  const recordByMedication = new Map(records.map((record) => [record.medicationId, record]));
+  return medications
+    .filter((medication) => medication.quantity <= medication.reorderLevel)
+    .map((medication) => {
+      const record = recordByMedication.get(medication.id);
+      const resumed = Boolean(record && medication.quantity < record.quantityAtMark);
+      const status: ReorderNeed["status"] = record && !resumed ? "ordered" : "needed";
+      return { medication, status, resumed, orderedAt: record?.markedAt };
+    })
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "needed" ? -1 : 1;
+      return a.medication.quantity - b.medication.quantity;
+    });
 };
 
 export const calculateOrderTotal = (items: CartItem[]) => items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
@@ -102,8 +124,13 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
     ...state,
     isReady,
     alerts: buildAlerts(state.medications),
+    reorderNeeds: buildReorderNeeds(state.medications, state.reorderRecords),
     addMedication: (medication) => setState((current) => ({ ...current, medications: [{ ...medication, id: makeId("med") }, ...current.medications] })),
-    updateMedication: (id, medication) => setState((current) => ({ ...current, medications: current.medications.map((item) => item.id === id ? { ...medication, id } : item) })),
+    updateMedication: (id, medication) => setState((current) => {
+      const previous = current.medications.find((item) => item.id === id);
+      const isRestocked = Boolean(previous && medication.quantity > previous.quantity && medication.quantity > medication.reorderLevel);
+      return { ...current, medications: current.medications.map((item) => item.id === id ? { ...medication, id } : item), reorderRecords: isRestocked ? current.reorderRecords.filter((record) => record.medicationId !== id) : current.reorderRecords };
+    }),
     deleteMedication: (id) => setState((current) => ({ ...current, medications: current.medications.filter((item) => item.id !== id) })),
     completeSale: (items, paymentMethod) => {
       if (!items.length || items.some((item) => (state.medications.find((medication) => medication.id === item.medicationId)?.quantity ?? 0) < item.quantity)) return false;
@@ -113,6 +140,12 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
     },
     addSupplier: (supplier) => setState((current) => ({ ...current, suppliers: [{ ...supplier, id: makeId("supplier"), lastOrder: "لم يتم الطلب بعد" }, ...current.suppliers] })),
     addIncomingOrder: (order) => setState((current) => ({ ...current, incomingOrders: [{ ...order, id: makeId("order"), createdAt: new Date().toISOString() }, ...current.incomingOrders] })),
+    markReorderOrdered: (medicationId) => setState((current) => {
+      const medication = current.medications.find((item) => item.id === medicationId);
+      if (!medication || medication.quantity > medication.reorderLevel) return current;
+      const record: ReorderRecord = { medicationId, markedAt: new Date().toISOString(), quantityAtMark: medication.quantity };
+      return { ...current, reorderRecords: [record, ...current.reorderRecords.filter((item) => item.medicationId !== medicationId)] };
+    }),
     restoreDemoData: () => setState(createDemoState()),
   }), [isReady, state]);
 

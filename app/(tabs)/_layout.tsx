@@ -39,7 +39,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen name="inventory" options={{ title: "المخزون", tabBarIcon: ({ color }) => <IconSymbol size={24} name="shippingbox.fill" color={color} /> }} />
       <Tabs.Screen name="sales" options={{ title: "البيع", tabBarIcon: ({ color }) => <IconSymbol size={24} name="cart.fill" color={color} /> }} />
-      <Tabs.Screen name="alerts" options={{ title: "التنبيهات", tabBarIcon: ({ color }) => <IconSymbol size={24} name="bell.fill" color={color} /> }} />
+      <Tabs.Screen name="alerts" options={{ title: "النواقص", tabBarIcon: ({ color }) => <IconSymbol size={24} name="bell.fill" color={color} /> }} />
       <Tabs.Screen name="more" options={{ title: "المزيد", tabBarIcon: ({ color }) => <IconSymbol size={24} name="ellipsis.circle.fill" color={color} /> }} />
     </Tabs>
   );
