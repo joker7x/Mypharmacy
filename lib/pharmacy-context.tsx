@@ -17,8 +17,9 @@ export type Medication = {
 export type CartItem = { medicationId: string; name: string; unitPrice: number; quantity: number };
 export type Sale = { id: string; createdAt: string; items: CartItem[]; total: number; paymentMethod: "نقدي" | "بطاقة" | "محفظة" };
 export type Supplier = { id: string; name: string; company: string; phone: string; lastOrder: string };
+export type IncomingOrder = { id: string; supplierName: string; sourceType: "شركة" | "مكتب" | "مورد آخر"; referenceNumber?: string; total?: number; notes?: string; invoiceUri?: string; createdAt: string };
 export type PharmacyAlert = { id: string; medicationId: string; title: string; detail: string; severity: "high" | "medium" | "low"; kind: "stock" | "expiry" };
-type PharmacyState = { medications: Medication[]; sales: Sale[]; suppliers: Supplier[] };
+type PharmacyState = { medications: Medication[]; sales: Sale[]; suppliers: Supplier[]; incomingOrders: IncomingOrder[] };
 
 type PharmacyContextValue = PharmacyState & {
   isReady: boolean;
@@ -28,6 +29,7 @@ type PharmacyContextValue = PharmacyState & {
   deleteMedication: (id: string) => void;
   completeSale: (items: CartItem[], paymentMethod: Sale["paymentMethod"]) => boolean;
   addSupplier: (supplier: Omit<Supplier, "id" | "lastOrder">) => void;
+  addIncomingOrder: (order: Omit<IncomingOrder, "id" | "createdAt">) => void;
   restoreDemoData: () => void;
 };
 
@@ -55,7 +57,18 @@ const createDemoState = (): PharmacyState => ({
     { id: "supplier-2", name: "سارة عادل", company: "المتحدة للأدوية", phone: "0122 880 5431", lastOrder: "منذ 5 أيام" },
     { id: "supplier-3", name: "محمود نبيل", company: "ميديكال إمداد", phone: "0111 638 9204", lastOrder: "منذ أسبوع" },
   ],
+  incomingOrders: [],
 });
+
+export const normalizePharmacyState = (stored: Partial<PharmacyState>): PharmacyState => {
+  const demo = createDemoState();
+  return {
+    medications: Array.isArray(stored.medications) ? stored.medications : demo.medications,
+    sales: Array.isArray(stored.sales) ? stored.sales : demo.sales,
+    suppliers: Array.isArray(stored.suppliers) ? stored.suppliers : demo.suppliers,
+    incomingOrders: Array.isArray(stored.incomingOrders) ? stored.incomingOrders : [],
+  };
+};
 
 export const buildAlerts = (medications: Medication[]): PharmacyAlert[] => {
   const generated: PharmacyAlert[] = [];
@@ -78,7 +91,7 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const load = async () => {
-      try { const stored = await AsyncStorage.getItem(STORAGE_KEY); if (stored) setState(JSON.parse(stored) as PharmacyState); } catch { /* Start with demos if storage is unavailable. */ } finally { setIsReady(true); }
+      try { const stored = await AsyncStorage.getItem(STORAGE_KEY); if (stored) setState(normalizePharmacyState(JSON.parse(stored) as Partial<PharmacyState>)); } catch { /* Start with demos if storage is unavailable. */ } finally { setIsReady(true); }
     };
     void load();
   }, []);
@@ -99,6 +112,7 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
       return true;
     },
     addSupplier: (supplier) => setState((current) => ({ ...current, suppliers: [{ ...supplier, id: makeId("supplier"), lastOrder: "لم يتم الطلب بعد" }, ...current.suppliers] })),
+    addIncomingOrder: (order) => setState((current) => ({ ...current, incomingOrders: [{ ...order, id: makeId("order"), createdAt: new Date().toISOString() }, ...current.incomingOrders] })),
     restoreDemoData: () => setState(createDemoState()),
   }), [isReady, state]);
 

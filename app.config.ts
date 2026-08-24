@@ -87,6 +87,13 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     [
+      "expo-image-picker",
+      {
+        photosPermission: "السماح لتطبيق صيدليتي بالوصول إلى صور الفواتير.",
+        cameraPermission: "السماح لتطبيق صيدليتي باستخدام الكاميرا لتصوير فواتير الطلبيات.",
+      },
+    ],
+    [
       "expo-audio",
       {
         microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone.",
