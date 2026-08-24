@@ -1,0 +1,39 @@
+import { router } from "expo-router";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+
+import { Badge, Card, COLORS, PageHeader, RoundIcon, SectionTitle, commonStyles } from "@/components/app-ui";
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { formatCurrency, formatShortDate, usePharmacy } from "@/lib/pharmacy-context";
+import { ScreenContainer } from "@/components/screen-container";
+
+export default function DashboardScreen() {
+  const { medications, sales, alerts, isReady } = usePharmacy();
+  const todaysSales = sales.filter((sale) => new Date(sale.createdAt).toDateString() === new Date().toDateString());
+  const todayRevenue = todaysSales.reduce((sum, sale) => sum + sale.total, 0);
+  const lowStockCount = alerts.filter((alert) => alert.kind === "stock").length;
+  const recentSales = sales.slice(0, 3);
+
+  return <ScreenContainer containerClassName="bg-background" className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}>
+    <PageHeader title="مرحبًا، يا د. خالد" subtitle={isReady ? "تابع تشغيل الصيدلية في مكان واحد" : "جاري تجهيز بيانات الصيدلية..."} />
+    <View style={styles.heroCard}><View style={styles.heroTop}><View style={styles.heroTextBlock}><Text style={styles.heroLabel}>مبيعات اليوم</Text><Text style={styles.heroValue}>{formatCurrency(todayRevenue)}</Text><Text style={styles.heroFootnote}>{todaysSales.length} فواتير مسجلة حتى الآن</Text></View><View style={styles.heroIcon}><IconSymbol name="chart.line.uptrend.xyaxis" size={25} color="#FFFFFF" /></View></View><View style={styles.heroDivider} /><View style={styles.heroBottom}><Text style={styles.heroBottomText}>معدل المبيعات مستقر مقارنة ببداية اليوم</Text><Badge label="اليوم" tone="success" /></View></View>
+    <View style={styles.quickGrid}><QuickAction label="عملية بيع" icon="cart.fill" onPress={() => router.push("/(tabs)/sales")} /><QuickAction label="إضافة صنف" icon="plus.circle.fill" onPress={() => router.push("/medicine-form")} success /><QuickAction label="المخزون" icon="shippingbox.fill" onPress={() => router.push("/(tabs)/inventory")} blue /><QuickAction label="التنبيهات" icon="bell.fill" onPress={() => router.push("/(tabs)/alerts")} warning /></View>
+    <SectionTitle title="نظرة سريعة" />
+    <View style={styles.metricGrid}><Card style={styles.metricCard}><View style={styles.metricRow}><RoundIcon name="shippingbox.fill" color={COLORS.primary} background={COLORS.mint} /><Text style={styles.metricValue}>{medications.length}</Text></View><Text style={styles.metricLabel}>أصناف مسجلة</Text></Card><Card style={styles.metricCard}><View style={styles.metricRow}><RoundIcon name="exclamationmark.triangle.fill" color={COLORS.warning} background={COLORS.softWarning} /><Text style={styles.metricValue}>{lowStockCount}</Text></View><Text style={styles.metricLabel}>تحتاج إعادة طلب</Text></Card></View>
+    <SectionTitle title="تنبيهات تحتاج انتباهك" action="عرض الكل" onActionPress={() => router.push("/(tabs)/alerts")} />
+    <Card style={styles.alertCard}>{alerts.slice(0, 2).map((alert, index) => <TouchableOpacity key={alert.id} onPress={() => router.push({ pathname: "/medicine-form", params: { id: alert.medicationId } })} activeOpacity={0.75}><View style={styles.alertRow}><View style={styles.alertText}><Text style={styles.alertTitle}>{alert.title}</Text><Text style={styles.alertDetail}>{alert.detail}</Text></View><RoundIcon name={alert.kind === "stock" ? "shippingbox.fill" : "clock.fill"} color={alert.severity === "high" ? COLORS.danger : COLORS.warning} background={alert.severity === "high" ? COLORS.softDanger : COLORS.softWarning} /></View>{index === 0 && alerts.length > 1 ? <View style={commonStyles.rowDivider} /> : null}</TouchableOpacity>)}{!alerts.length ? <Text style={styles.emptyText}>لا توجد تنبيهات حرجة حاليًا.</Text> : null}</Card>
+    <SectionTitle title="آخر عمليات البيع" action="نقطة البيع" onActionPress={() => router.push("/(tabs)/sales")} />
+    <Card style={styles.salesCard}>{recentSales.map((sale, index) => <View key={sale.id}><View style={styles.saleRow}><View style={styles.saleText}><Text style={styles.saleTitle}>{sale.items.map((item) => item.name).join("، ")}</Text><Text style={styles.saleDetail}>{formatShortDate(sale.createdAt)} · {sale.paymentMethod}</Text></View><Text style={styles.saleAmount}>{formatCurrency(sale.total)}</Text></View>{index < recentSales.length - 1 ? <View style={commonStyles.rowDivider} /> : null}</View>)}</Card>
+  </ScrollView></ScreenContainer>;
+}
+
+function QuickAction({ label, icon, onPress, success, blue, warning }: { label: string; icon: Parameters<typeof RoundIcon>[0]["name"]; onPress: () => void; success?: boolean; blue?: boolean; warning?: boolean }) {
+  const color = success ? COLORS.success : blue ? "#496C9C" : warning ? COLORS.warning : COLORS.primary;
+  const background = success ? "#E4F6EE" : blue ? "#E8F0FA" : warning ? COLORS.softWarning : COLORS.mint;
+  return <TouchableOpacity onPress={onPress} style={styles.quickAction} activeOpacity={0.8}><RoundIcon name={icon} color={color} background={background} /><Text style={styles.quickText}>{label}</Text></TouchableOpacity>;
+}
+
+const styles = StyleSheet.create({
+  heroCard: { backgroundColor: COLORS.primary, borderRadius: 24, padding: 20, shadowColor: COLORS.primary, shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 3 }, heroTop: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "flex-start" }, heroTextBlock: { alignItems: "flex-end" }, heroLabel: { color: "#C7F1EA", fontSize: 13, fontWeight: "700" }, heroValue: { color: "#FFFFFF", fontSize: 31, lineHeight: 40, fontWeight: "900", marginTop: 3 }, heroFootnote: { color: "#D7F3EE", fontSize: 12, marginTop: 2 }, heroIcon: { width: 46, height: 46, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.16)", justifyContent: "center", alignItems: "center" }, heroDivider: { height: 1, backgroundColor: "rgba(255,255,255,0.18)", marginVertical: 16 }, heroBottom: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, heroBottomText: { color: "#D7F3EE", fontSize: 11, flex: 1, textAlign: "right", paddingLeft: 10 },
+  quickGrid: { flexDirection: "row-reverse", justifyContent: "space-between", marginTop: 22 }, quickAction: { alignItems: "center", width: "23%" }, quickText: { color: COLORS.ink, fontSize: 11, fontWeight: "700", marginTop: 7, textAlign: "center" }, metricGrid: { flexDirection: "row-reverse", gap: 12 }, metricCard: { flex: 1 }, metricRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" }, metricValue: { color: COLORS.ink, fontSize: 26, fontWeight: "900" }, metricLabel: { color: COLORS.muted, fontSize: 12, fontWeight: "700", textAlign: "right", marginTop: 12 },
+  alertCard: { paddingVertical: 14 }, alertRow: { flexDirection: "row-reverse", alignItems: "center", gap: 12, paddingHorizontal: 2 }, alertText: { flex: 1, alignItems: "flex-end" }, alertTitle: { color: COLORS.ink, fontSize: 14, fontWeight: "800", textAlign: "right" }, alertDetail: { color: COLORS.muted, fontSize: 12, lineHeight: 18, textAlign: "right", marginTop: 3 }, emptyText: { color: COLORS.muted, fontSize: 13, textAlign: "right" }, salesCard: { paddingVertical: 14 }, saleRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 2 }, saleText: { flex: 1, alignItems: "flex-end", paddingLeft: 10 }, saleTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "800", textAlign: "right" }, saleDetail: { color: COLORS.muted, fontSize: 11, marginTop: 4, textAlign: "right" }, saleAmount: { color: COLORS.primary, fontSize: 13, fontWeight: "900", writingDirection: "ltr" },
+});
