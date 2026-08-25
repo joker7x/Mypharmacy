@@ -23,11 +23,16 @@ export default function TabLayout() {
           paddingTop: 8,
           paddingBottom: bottomPadding,
           height: tabBarHeight,
-          backgroundColor: colors.background,
+          backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          borderTopWidth: 0.5,
+          borderTopWidth: 1,
+          shadowColor: "#173B45",
+          shadowOpacity: 0.08,
+          shadowRadius: 14,
+          shadowOffset: { width: 0, height: -5 },
+          elevation: 10,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "700", marginTop: 2 },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: "800", marginTop: 2 },
       }}
     >
       <Tabs.Screen
