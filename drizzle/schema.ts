@@ -32,11 +32,21 @@ export const productCatalog = mysqlTable("product_catalog", {
   currentPrice: decimal("currentPrice", { precision: 12, scale: 2 }).notNull(),
   previousPrice: decimal("previousPrice", { precision: 12, scale: 2 }),
   soldTimes: int("soldTimes").notNull().default(0),
+  activeIngredient: text("activeIngredient"),
+  imagePath: varchar("imagePath", { length: 512 }),
+  category: varchar("category", { length: 255 }),
+  company: varchar("company", { length: 255 }),
+  dosageForm: varchar("dosageForm", { length: 128 }),
+  barcode: varchar("barcode", { length: 128 }),
+  administrationRoute: varchar("administrationRoute", { length: 128 }),
+  description: text("description"),
   sourceUpdatedAt: bigint("sourceUpdatedAt", { mode: "number" }).notNull(),
   syncedAt: timestamp("syncedAt").defaultNow().notNull(),
 }, (table) => [
   index("product_catalog_name_idx").on(table.name),
   index("product_catalog_arabic_name_idx").on(table.arabicName),
+  index("product_catalog_barcode_idx").on(table.barcode),
+  index("product_catalog_company_idx").on(table.company),
   index("product_catalog_updated_idx").on(table.sourceUpdatedAt),
 ]);
 

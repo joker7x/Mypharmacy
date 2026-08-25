@@ -1,4 +1,4 @@
-import { count, desc, eq, isNotNull, like, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, like, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { catalogSyncState, InsertProductCatalog, InsertUser, productCatalog, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -121,9 +121,17 @@ export async function upsertCatalogProducts(products: InsertProductCatalog[]) {
       name: sql`VALUES(${productCatalog.name})`,
       arabicName: sql`VALUES(${productCatalog.arabicName})`,
       currentPrice: sql`VALUES(${productCatalog.currentPrice})`,
-      previousPrice: sql`VALUES(${productCatalog.previousPrice})`,
+      previousPrice: sql`COALESCE(VALUES(${productCatalog.previousPrice}), ${productCatalog.previousPrice})`,
       soldTimes: sql`VALUES(${productCatalog.soldTimes})`,
-      sourceUpdatedAt: sql`VALUES(${productCatalog.sourceUpdatedAt})`,
+      activeIngredient: sql`COALESCE(VALUES(${productCatalog.activeIngredient}), ${productCatalog.activeIngredient})`,
+      imagePath: sql`COALESCE(VALUES(${productCatalog.imagePath}), ${productCatalog.imagePath})`,
+      category: sql`COALESCE(VALUES(${productCatalog.category}), ${productCatalog.category})`,
+      company: sql`COALESCE(VALUES(${productCatalog.company}), ${productCatalog.company})`,
+      dosageForm: sql`COALESCE(VALUES(${productCatalog.dosageForm}), ${productCatalog.dosageForm})`,
+      barcode: sql`COALESCE(VALUES(${productCatalog.barcode}), ${productCatalog.barcode})`,
+      administrationRoute: sql`COALESCE(VALUES(${productCatalog.administrationRoute}), ${productCatalog.administrationRoute})`,
+      description: sql`COALESCE(VALUES(${productCatalog.description}), ${productCatalog.description})`,
+      sourceUpdatedAt: sql`GREATEST(VALUES(${productCatalog.sourceUpdatedAt}), ${productCatalog.sourceUpdatedAt})`,
       syncedAt,
     },
   });
@@ -143,17 +151,38 @@ export async function saveCatalogSyncState(input: {
   });
 }
 
-export async function searchCatalogProducts(query: string, limit: number) {
+export async function searchCatalogProducts(query: string, limit: number, offset: number) {
   const db = requireDatabase(await getDb());
   const term = `%${query.trim()}%`;
-  return db.select().from(productCatalog).where(or(
+  const filter = or(
     like(productCatalog.arabicName, term),
     like(productCatalog.name, term),
     like(productCatalog.externalId, term),
-  )).orderBy(desc(productCatalog.sourceUpdatedAt)).limit(limit);
+    like(productCatalog.barcode, term),
+    like(productCatalog.company, term),
+    like(productCatalog.category, term),
+    like(productCatalog.activeIngredient, term),
+  );
+  const [summary] = await db.select({ total: count() }).from(productCatalog).where(filter);
+  const items = await db.select().from(productCatalog).where(filter).orderBy(desc(productCatalog.sourceUpdatedAt)).limit(limit).offset(offset);
+  return { items, total: Number(summary?.total ?? 0) };
 }
 
-export async function listRecentPriceChanges(limit: number) {
+export type LatestPriceSort = "latest" | "largest_change" | "best_selling";
+
+export async function listRecentPriceChanges(limit: number, offset: number, sort: LatestPriceSort) {
   const db = requireDatabase(await getDb());
-  return db.select().from(productCatalog).where(isNotNull(productCatalog.previousPrice)).orderBy(desc(productCatalog.sourceUpdatedAt)).limit(limit);
+  const changedPrice = and(isNotNull(productCatalog.previousPrice), ne(productCatalog.previousPrice, productCatalog.currentPrice));
+  const [summary] = await db.select({ total: count() }).from(productCatalog).where(changedPrice);
+  const total = Number(summary?.total ?? 0);
+  if (sort === "largest_change") {
+    const items = await db.select().from(productCatalog).where(changedPrice).orderBy(desc(sql`ABS(${productCatalog.currentPrice} - ${productCatalog.previousPrice})`), desc(productCatalog.sourceUpdatedAt)).limit(limit).offset(offset);
+    return { items, total };
+  }
+  if (sort === "best_selling") {
+    const items = await db.select().from(productCatalog).where(changedPrice).orderBy(desc(productCatalog.soldTimes), desc(productCatalog.sourceUpdatedAt)).limit(limit).offset(offset);
+    return { items, total };
+  }
+  const items = await db.select().from(productCatalog).where(changedPrice).orderBy(desc(productCatalog.sourceUpdatedAt)).limit(limit).offset(offset);
+  return { items, total };
 }

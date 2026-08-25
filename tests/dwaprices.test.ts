@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { extractProductList, normalizeDwapriceProduct } from "../server/dwaprices";
+import { normalizeDrugListLine, normalizeDrugListRecord } from "../server/druglist";
 
 describe("تطبيع بيانات dwaprices", () => {
   it("يستخرج قائمة أصناف سواء وصلت مباشرة أو داخل كائن", () => {
@@ -18,5 +19,19 @@ describe("تطبيع بيانات dwaprices", () => {
 
   it("يتعامل مع السعر السابق الفارغ بوصفه غير متاح لا صفرًا", () => {
     expect(normalizeDwapriceProduct({ id: "7", name: "sample", arabic: "صنف", price: "120", oldprice: "", sold_times: "1", Date_updated: "1787601957" })).toEqual(expect.objectContaining({ previousPrice: null }));
+  });
+
+  it("يحوّل سطر ملف الأدوية إلى بيانات كاملة قابلة للفهرسة", () => {
+    const line = "42,English drug,دواء عربي,10,15,active,upload/pic.png,category,company,tablet,1,6221000000010,oral.solid,وصف الدواء,88,1780000000,0";
+    expect(normalizeDrugListLine(line)).toEqual(expect.objectContaining({ externalId: "42", arabicName: "دواء عربي", currentPrice: "15.00", previousPrice: "10.00", category: "category", company: "company", barcode: "6221000000010", soldTimes: 88, sourceUpdatedAt: 1780000000000 }));
+  });
+
+  it("يتجاوز السطر غير الصالح من ملف الأدوية", () => {
+    expect(normalizeDrugListLine("invalid,,")).toBeNull();
+  });
+
+  it("يحفظ الوصف المقتبس الذي يحتوي فواصل عند تمرير سجل CSV محلل", () => {
+    const record = ["43", "English drug", "دواء عربي", "", "15", "active", "", "category", "company", "tablet", "1", "", "oral.solid", "وصف، يحتوي، فواصل", "12", "1780000000"];
+    expect(normalizeDrugListRecord(record)).toEqual(expect.objectContaining({ description: "وصف، يحتوي، فواصل", soldTimes: 12 }));
   });
 });
