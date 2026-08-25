@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { count, desc, eq, isNotNull, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { catalogSyncState, InsertProductCatalog, InsertUser, productCatalog, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,71 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+const CATALOG_STATE_ID = "dwaprices";
+
+function requireDatabase(db: Awaited<ReturnType<typeof getDb>>) {
+  if (!db) throw new Error("قاعدة بيانات دليل الأصناف غير متاحة حاليًا.");
+  return db;
+}
+
+export async function getCatalogStatus() {
+  const db = requireDatabase(await getDb());
+  const [summary] = await db.select({ total: count() }).from(productCatalog);
+  const [state] = await db.select().from(catalogSyncState).where(eq(catalogSyncState.id, CATALOG_STATE_ID)).limit(1);
+  const nextOffset = state?.nextOffset ?? 0;
+  return {
+    productCount: Number(summary?.total ?? 0),
+    nextOffset,
+    isComplete: state?.isComplete ?? false,
+    progress: state?.isComplete ? 100 : Math.min(100, Math.round((nextOffset / 60_000) * 100)),
+    lastFullSyncAt: state?.lastFullSyncAt?.toISOString() ?? null,
+    lastLatestSyncAt: state?.lastLatestSyncAt?.toISOString() ?? null,
+    lastError: state?.lastError ?? null,
+  };
+}
+
+export async function upsertCatalogProducts(products: InsertProductCatalog[]) {
+  if (!products.length) return;
+  const db = requireDatabase(await getDb());
+  const syncedAt = new Date();
+  await db.insert(productCatalog).values(products.map((product) => ({ ...product, syncedAt }))).onDuplicateKeyUpdate({
+    set: {
+      name: sql`VALUES(${productCatalog.name})`,
+      arabicName: sql`VALUES(${productCatalog.arabicName})`,
+      currentPrice: sql`VALUES(${productCatalog.currentPrice})`,
+      previousPrice: sql`VALUES(${productCatalog.previousPrice})`,
+      soldTimes: sql`VALUES(${productCatalog.soldTimes})`,
+      sourceUpdatedAt: sql`VALUES(${productCatalog.sourceUpdatedAt})`,
+      syncedAt,
+    },
+  });
+}
+
+export async function saveCatalogSyncState(input: {
+  nextOffset: number;
+  isComplete: boolean;
+  lastFullSyncAt?: Date;
+  lastLatestSyncAt?: Date;
+  lastError?: string | null;
+}) {
+  const db = requireDatabase(await getDb());
+  const updatedAt = new Date();
+  await db.insert(catalogSyncState).values({ id: CATALOG_STATE_ID, ...input, updatedAt }).onDuplicateKeyUpdate({
+    set: { ...input, updatedAt },
+  });
+}
+
+export async function searchCatalogProducts(query: string, limit: number) {
+  const db = requireDatabase(await getDb());
+  const term = `%${query.trim()}%`;
+  return db.select().from(productCatalog).where(or(
+    like(productCatalog.arabicName, term),
+    like(productCatalog.name, term),
+    like(productCatalog.externalId, term),
+  )).orderBy(desc(productCatalog.sourceUpdatedAt)).limit(limit);
+}
+
+export async function listRecentPriceChanges(limit: number) {
+  const db = requireDatabase(await getDb());
+  return db.select().from(productCatalog).where(isNotNull(productCatalog.previousPrice)).orderBy(desc(productCatalog.sourceUpdatedAt)).limit(limit);
+}

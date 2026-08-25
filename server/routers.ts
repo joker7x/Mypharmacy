@@ -1,7 +1,10 @@
 import { COOKIE_NAME } from "../shared/const.js";
+import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
+import * as catalogService from "./dwaprices";
+import * as db from "./db";
 
 export const appRouter = router({
   // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -16,13 +19,13 @@ export const appRouter = router({
       } as const;
     }),
   }),
-
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  catalog: router({
+    status: publicProcedure.query(() => db.getCatalogStatus()),
+    search: publicProcedure.input(z.object({ query: z.string().trim().min(2).max(120), limit: z.number().int().min(1).max(50).default(30) })).query(({ input }) => db.searchCatalogProducts(input.query, input.limit)),
+    latest: publicProcedure.input(z.object({ limit: z.number().int().min(1).max(50).default(20) })).query(({ input }) => db.listRecentPriceChanges(input.limit)),
+    syncNextBatch: publicProcedure.input(z.object({ maxPages: z.number().int().min(1).max(20).default(20) })).mutation(({ input }) => catalogService.syncCatalogBatch(input.maxPages)),
+    refreshLatest: publicProcedure.mutation(() => catalogService.refreshLatestPrices()),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

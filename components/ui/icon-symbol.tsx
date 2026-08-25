@@ -35,6 +35,8 @@ const MAPPING = {
   "exclamationmark.triangle.fill": "warning-amber",
   "clock.fill": "schedule",
   "doc.text.fill": "receipt-long",
+  "books.vertical.fill": "menu-book",
+  "arrow.triangle.2.circlepath": "sync",
   "camera.fill": "photo-camera",
   "photo.on.rectangle.angled": "photo-library",
   "eye.fill": "visibility",

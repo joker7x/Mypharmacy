@@ -6,6 +6,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { ScreenContainer } from "@/components/screen-container";
 
 const destinations = [
+  { title: "دليل الأصناف والأسعار", subtitle: "بحث شامل وتغيرات أسعار من مصدر dwaprices", icon: "books.vertical.fill" as const, path: "/catalog" },
   { title: "الطلبيات الواردة", subtitle: "تسجيل طلبات الموردين وحفظ صور الفواتير", icon: "doc.text.fill" as const, path: "/orders" },
   { title: "التقارير التشغيلية", subtitle: "مبيعات اليوم والأصناف الأكثر طلبًا", icon: "chart.line.uptrend.xyaxis" as const, path: "/reports" },
   { title: "الموردون", subtitle: "جهات التوريد وبيانات الاتصال", icon: "truck.box.fill" as const, path: "/suppliers" },
