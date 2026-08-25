@@ -37,6 +37,7 @@ export const productCatalog = mysqlTable("product_catalog", {
   category: varchar("category", { length: 255 }),
   company: varchar("company", { length: 255 }),
   dosageForm: varchar("dosageForm", { length: 128 }),
+  unitsPerPackage: int("unitsPerPackage").notNull().default(1),
   barcode: varchar("barcode", { length: 128 }),
   administrationRoute: varchar("administrationRoute", { length: 128 }),
   description: text("description"),

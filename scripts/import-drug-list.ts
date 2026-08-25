@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { parse } from "csv-parse";
 
 import type { InsertProductCatalog } from "../drizzle/schema";
-import { upsertCatalogProducts } from "../server/db";
+import { updateCatalogPackageUnits, upsertCatalogProducts } from "../server/db";
 import { normalizeDrugListRecord } from "../server/druglist";
 
 const inputPath = "/home/ubuntu/upload/druglist.csv";
@@ -14,6 +14,7 @@ async function importDrugList() {
   const flush = async () => {
     if (!batch.length) return;
     await upsertCatalogProducts(batch);
+    await updateCatalogPackageUnits(batch.map((product) => ({ externalId: product.externalId, unitsPerPackage: product.unitsPerPackage })));
     report.imported += batch.length;
     report.batches += 1;
     batch = [];

@@ -36,6 +36,7 @@ export function normalizeDrugListRecord(fields: string[]): InsertProductCatalog 
     category: asLimitedText(fields[7], 255),
     company: asLimitedText(fields[8], 255),
     dosageForm: asLimitedText(fields[9], 128),
+    unitsPerPackage: Math.max(1, Math.trunc(asNumber(fields[10]) ?? 1)),
     barcode: asLimitedText(fields[11], 128),
     administrationRoute: asLimitedText(fields[12], 128),
     description: description ? description.slice(0, 60_000) : null,

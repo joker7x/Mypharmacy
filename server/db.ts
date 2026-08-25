@@ -168,6 +168,26 @@ export async function searchCatalogProducts(query: string, limit: number, offset
   return { items, total: Number(summary?.total ?? 0) };
 }
 
+export async function getCatalogProduct(externalId: string) {
+  const db = requireDatabase(await getDb());
+  const [product] = await db.select().from(productCatalog).where(eq(productCatalog.externalId, externalId)).limit(1);
+  return product ?? null;
+}
+
+export async function updateCatalogPackageUnits(products: Array<Pick<InsertProductCatalog, "externalId" | "unitsPerPackage">>) {
+  if (!products.length) return;
+  const db = requireDatabase(await getDb());
+  await db.insert(productCatalog).values(products.map((product) => ({
+    externalId: product.externalId,
+    name: "",
+    arabicName: "",
+    currentPrice: "0.00",
+    soldTimes: 0,
+    sourceUpdatedAt: 0,
+    unitsPerPackage: Math.max(1, product.unitsPerPackage ?? 1),
+  }))).onDuplicateKeyUpdate({ set: { unitsPerPackage: sql`GREATEST(VALUES(${productCatalog.unitsPerPackage}), 1)` } });
+}
+
 export type LatestPriceSort = "latest" | "largest_change" | "best_selling";
 
 export async function listRecentPriceChanges(limit: number, offset: number, sort: LatestPriceSort) {

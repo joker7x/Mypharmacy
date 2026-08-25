@@ -4,7 +4,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   default: { getItem: vi.fn(), setItem: vi.fn() },
 }));
 
-import { calculateOrderTotal, normalizePharmacyState, type CartItem, type IncomingOrder } from "./pharmacy-context";
+import { calculateOrderTotal, getUnitPrice, getUnitsPerPackage, normalizePharmacyState, type CartItem, type IncomingOrder } from "./pharmacy-context";
 
 describe("إدارة بيانات الطلبيات المحلية", () => {
   it("تضيف قائمة طلبيات فارغة للبيانات المحفوظة من الإصدارات السابقة", () => {
@@ -32,5 +32,10 @@ describe("إدارة بيانات الطلبيات المحلية", () => {
       { medicationId: "med-2", name: "صنف ثان", unitPrice: 40, quantity: 3 },
     ];
     expect(calculateOrderTotal(items)).toBe(270);
+  });
+
+  it("يحسب سعر وحدة البيع من سعر العبوة وعدد وحداتها", () => {
+    expect(getUnitsPerPackage({ unitsPerPackage: 2 })).toBe(2);
+    expect(getUnitPrice({ price: 96, unitsPerPackage: 2 })).toBe(48);
   });
 });

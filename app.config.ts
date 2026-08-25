@@ -94,6 +94,12 @@ const config: ExpoConfig = {
       },
     ],
     [
+      "expo-camera",
+      {
+        cameraPermission: "السماح لتطبيق صيدليتي باستخدام الكاميرا لمسح باركود الأدوية.",
+      },
+    ],
+    [
       "expo-audio",
       {
         microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone.",

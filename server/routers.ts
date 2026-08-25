@@ -21,6 +21,7 @@ export const appRouter = router({
   }),
   catalog: router({
     status: publicProcedure.query(() => db.getCatalogStatus()),
+    product: publicProcedure.input(z.object({ externalId: z.string().trim().min(1).max(64) })).query(({ input }) => db.getCatalogProduct(input.externalId)),
     search: publicProcedure.input(z.object({ query: z.string().trim().min(2).max(120), limit: z.number().int().min(1).max(100).default(100), offset: z.number().int().min(0).max(100_000).default(0) })).query(({ input }) => db.searchCatalogProducts(input.query, input.limit, input.offset)),
     latest: publicProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(100), offset: z.number().int().min(0).max(100_000).default(0), sort: z.enum(["latest", "largest_change", "best_selling"]).default("latest") })).query(({ input }) => db.listRecentPriceChanges(input.limit, input.offset, input.sort)),
     syncNextBatch: publicProcedure.input(z.object({ maxPages: z.number().int().min(1).max(20).default(20) })).mutation(({ input }) => catalogService.syncCatalogBatch(input.maxPages)),

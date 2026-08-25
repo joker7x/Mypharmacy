@@ -5,16 +5,19 @@ const STORAGE_KEY = "saydalty-local-data-v1";
 
 export type Medication = {
   id: string;
+  catalogId?: string;
   name: string;
   category: string;
   sku: string;
+  barcode?: string;
   price: number;
   quantity: number;
+  unitsPerPackage?: number;
   reorderLevel: number;
   expiryDate: string;
 };
 
-export type CartItem = { medicationId: string; name: string; unitPrice: number; quantity: number };
+export type CartItem = { medicationId: string; name: string; unitPrice: number; quantity: number; unitLabel?: string };
 export type Sale = { id: string; createdAt: string; items: CartItem[]; total: number; paymentMethod: "نقدي" | "بطاقة" | "محفظة" };
 export type Supplier = { id: string; name: string; company: string; phone: string; lastOrder: string };
 export type IncomingOrder = { id: string; supplierName: string; sourceType: "شركة" | "مكتب" | "مورد آخر"; referenceNumber?: string; total?: number; notes?: string; invoiceUri?: string; createdAt: string };
@@ -41,6 +44,8 @@ const PharmacyContext = createContext<PharmacyContextValue | undefined>(undefine
 const makeId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const dateFromToday = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 const daysUntil = (date: string) => Math.ceil((new Date(date).getTime() - Date.now()) / 86_400_000);
+export const getUnitsPerPackage = (medication: Pick<Medication, "unitsPerPackage">) => Math.max(1, Math.trunc(medication.unitsPerPackage ?? 1));
+export const getUnitPrice = (medication: Pick<Medication, "price" | "unitsPerPackage">) => medication.price / getUnitsPerPackage(medication);
 
 const createDemoState = (): PharmacyState => ({
   medications: [
@@ -68,7 +73,7 @@ const createDemoState = (): PharmacyState => ({
 export const normalizePharmacyState = (stored: Partial<PharmacyState>): PharmacyState => {
   const demo = createDemoState();
   return {
-    medications: Array.isArray(stored.medications) ? stored.medications : demo.medications,
+    medications: Array.isArray(stored.medications) ? stored.medications.map((medication) => ({ ...medication, unitsPerPackage: getUnitsPerPackage(medication) })) : demo.medications,
     sales: Array.isArray(stored.sales) ? stored.sales : demo.sales,
     suppliers: Array.isArray(stored.suppliers) ? stored.suppliers : demo.suppliers,
     incomingOrders: Array.isArray(stored.incomingOrders) ? stored.incomingOrders : [],
@@ -81,7 +86,7 @@ export const buildAlerts = (medications: Medication[]): PharmacyAlert[] => {
   medications.forEach((medication) => {
     if (medication.quantity <= medication.reorderLevel) {
       const severity = medication.quantity <= Math.max(2, Math.floor(medication.reorderLevel / 2)) ? "high" : "medium";
-      generated.push({ id: `stock-${medication.id}`, medicationId: medication.id, title: severity === "high" ? "مخزون حرج" : "مخزون منخفض", detail: `${medication.name} — المتاح ${medication.quantity} عبوات فقط`, severity, kind: "stock" });
+      generated.push({ id: `stock-${medication.id}`, medicationId: medication.id, title: severity === "high" ? "مخزون حرج" : "مخزون منخفض", detail: `${medication.name} — المتاح ${medication.quantity} وحدة بيع فقط`, severity, kind: "stock" });
     }
     const remainingDays = daysUntil(medication.expiryDate);
     if (remainingDays <= 60) generated.push({ id: `expiry-${medication.id}`, medicationId: medication.id, title: remainingDays < 0 ? "انتهت الصلاحية" : "صلاحية قريبة", detail: remainingDays < 0 ? `${medication.name} يحتاج إلى معالجة فورية` : `${medication.name} ينتهي خلال ${remainingDays} يومًا`, severity: remainingDays <= 20 ? "high" : "medium", kind: "expiry" });

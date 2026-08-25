@@ -21,10 +21,11 @@ export default function InventoryScreen() {
 
   const renderItem = ({ item }: { item: Medication }) => {
     const lowStock = item.quantity <= item.reorderLevel;
+    const packages = Math.ceil(item.quantity / Math.max(1, item.unitsPerPackage ?? 1));
     const expirySoon = isExpirySoon(item.expiryDate);
     return <TouchableOpacity onPress={() => router.push({ pathname: "/medicine-form", params: { id: item.id } })} style={styles.item} activeOpacity={0.8}>
       <RoundIcon name="cross.case.fill" />
-      <View style={styles.itemBody}><View style={styles.itemTop}><Text style={styles.itemName}>{item.name}</Text><Text style={styles.price}>{formatCurrency(item.price)}</Text></View><View style={styles.itemMeta}><Text style={styles.itemCategory}>{item.category} · {item.sku}</Text><Text style={[styles.quantity, lowStock && { color: COLORS.danger }]}>{item.quantity} عبوة</Text></View><View style={styles.badges}>{lowStock ? <Badge label="مخزون منخفض" tone={item.quantity <= Math.max(2, Math.floor(item.reorderLevel / 2)) ? "danger" : "warning"} /> : <Badge label="متوفر" tone="success" />}{expirySoon ? <Badge label={`ينتهي ${formatShortDate(item.expiryDate)}`} tone="warning" /> : null}</View></View>
+      <View style={styles.itemBody}><View style={styles.itemTop}><Text style={styles.itemName}>{item.name}</Text><Text style={styles.price}>{formatCurrency(item.price)}</Text></View><View style={styles.itemMeta}><Text style={styles.itemCategory}>{item.category} · {item.sku}</Text><Text style={[styles.quantity, lowStock && { color: COLORS.danger }]}>{item.quantity} وحدة · {packages} عبوة</Text></View><View style={styles.badges}>{lowStock ? <Badge label="مخزون منخفض" tone={item.quantity <= Math.max(2, Math.floor(item.reorderLevel / 2)) ? "danger" : "warning"} /> : <Badge label="متوفر" tone="success" />}{expirySoon ? <Badge label={`ينتهي ${formatShortDate(item.expiryDate)}`} tone="warning" /> : null}</View></View>
       <IconSymbol name="chevron.left" size={19} color={COLORS.muted} />
     </TouchableOpacity>;
   };

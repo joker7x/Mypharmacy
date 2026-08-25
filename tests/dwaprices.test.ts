@@ -23,7 +23,7 @@ describe("تطبيع بيانات dwaprices", () => {
 
   it("يحوّل سطر ملف الأدوية إلى بيانات كاملة قابلة للفهرسة", () => {
     const line = "42,English drug,دواء عربي,10,15,active,upload/pic.png,category,company,tablet,1,6221000000010,oral.solid,وصف الدواء,88,1780000000,0";
-    expect(normalizeDrugListLine(line)).toEqual(expect.objectContaining({ externalId: "42", arabicName: "دواء عربي", currentPrice: "15.00", previousPrice: "10.00", category: "category", company: "company", barcode: "6221000000010", soldTimes: 88, sourceUpdatedAt: 1780000000000 }));
+    expect(normalizeDrugListLine(line)).toEqual(expect.objectContaining({ externalId: "42", arabicName: "دواء عربي", currentPrice: "15.00", previousPrice: "10.00", category: "category", company: "company", unitsPerPackage: 1, barcode: "6221000000010", soldTimes: 88, sourceUpdatedAt: 1780000000000 }));
   });
 
   it("يتجاوز السطر غير الصالح من ملف الأدوية", () => {

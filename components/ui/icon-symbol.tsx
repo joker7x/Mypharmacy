@@ -38,6 +38,7 @@ const MAPPING = {
   "books.vertical.fill": "menu-book",
   "arrow.triangle.2.circlepath": "sync",
   "camera.fill": "photo-camera",
+  "barcode.viewfinder": "qr-code-scanner",
   "photo.on.rectangle.angled": "photo-library",
   "eye.fill": "visibility",
   "xmark": "close",
