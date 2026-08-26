@@ -26,9 +26,12 @@ const PAGE_SIZE = 100;
 const priceFormatter = new Intl.NumberFormat("ar-EG", { maximumFractionDigits: 2 });
 const updateFormatter = new Intl.DateTimeFormat("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 const formatPrice = (value: string | number) => `${priceFormatter.format(Number(value))} ج.م`;
-const formatUpdate = (value: number) => updateFormatter.format(new Date(value));
+  const formatUpdate = (value: number) => {
+    const timestamp = Number(value);
+    return Number.isFinite(timestamp) && timestamp > 0 ? updateFormatter.format(new Date(timestamp)) : "غير محدد";
+  };
 const sortOptions: { id: PriceSort; label: string; icon: "clock.fill" | "chart.line.uptrend.xyaxis" | "cart.fill" }[] = [
-  { id: "latest", label: "الأحدث", icon: "clock.fill" },
+  { id: "latest", label: "الأحدث أولًا", icon: "clock.fill" },
   { id: "largest_change", label: "الأكثر تغيرًا", icon: "chart.line.uptrend.xyaxis" },
   { id: "best_selling", label: "الأكثر مبيعًا", icon: "cart.fill" },
 ];
@@ -46,7 +49,11 @@ export default function CatalogScreen() {
   const searchQuery = trpc.catalog.search.useQuery({ query: canSearch ? query : "xx", limit: PAGE_SIZE, offset }, { enabled: canSearch, staleTime: 180_000, refetchOnMount: false });
   const refreshMutation = trpc.catalog.refreshLatest.useMutation();
   const result = canSearch ? searchQuery.data : latestQuery.data;
-  const products = useMemo(() => (result?.items ?? []) as CatalogProduct[], [result?.items]);
+  const products = useMemo(() => {
+    const items = (result?.items ?? []) as CatalogProduct[];
+    if (!canSearch && sort === "latest") return [...items].sort((a, b) => Number(b.sourceUpdatedAt) - Number(a.sourceUpdatedAt));
+    return items;
+  }, [canSearch, result?.items, sort]);
   const total = result?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const busy = canSearch ? searchQuery.isFetching : latestQuery.isFetching;
