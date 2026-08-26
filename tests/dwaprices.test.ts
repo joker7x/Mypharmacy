@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extractProductList, normalizeDwapriceProduct } from "../server/dwaprices";
+import { extractProductList, keepSourceOrder, normalizeDwapriceProduct } from "../server/dwaprices";
 import { normalizeDrugListLine, normalizeDrugListRecord } from "../server/druglist";
 
 describe("تطبيع بيانات dwaprices", () => {
@@ -19,6 +19,10 @@ describe("تطبيع بيانات dwaprices", () => {
 
   it("يتعامل مع السعر السابق الفارغ بوصفه غير متاح لا صفرًا", () => {
     expect(normalizeDwapriceProduct({ id: "7", name: "sample", arabic: "صنف", price: "120", oldprice: "", sold_times: "1", Date_updated: "1787601957" })).toEqual(expect.objectContaining({ previousPrice: null }));
+  });
+
+  it("يحافظ على ترتيب endpoint ويزيل تكرار الصنف بين الدفعات", () => {
+    expect(keepSourceOrder([{ externalId: "new" }, { externalId: "same" }, { externalId: "same" }, { externalId: "old" }]).map((item) => item.externalId)).toEqual(["new", "same", "old"]);
   });
 
   it("يحوّل سطر ملف الأدوية إلى بيانات كاملة قابلة للفهرسة", () => {

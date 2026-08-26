@@ -72,6 +72,51 @@ export async function fetchDwapricePage(offset: number, timeoutMs = 30_000) {
   throw new Error(lastError instanceof Error ? lastError.message : "تعذر الاتصال بمصدر الأسعار.");
 }
 
+/** يحافظ على ترتيب endpoint ويزيل التكرارات دون أي إعادة فرز. */
+export function keepSourceOrder<T extends { externalId: string }>(items: T[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.externalId)) return false;
+    seen.add(item.externalId);
+    return true;
+  });
+}
+
+/**
+ * يقرأ أحدث الأسعار كما يرسلها المصدر. تستخدم الواجهة pages=10 للدفعة الأولى
+ * (1000 صنف)، وpages=1 فقط عند فحص الجديد أو طلب صفحة أقدم.
+ */
+export async function fetchLatestPriceFeed(offset = 0, pages = 1) {
+  const startOffset = Math.max(0, Math.trunc(offset));
+  const requestedPages = Math.min(10, Math.max(1, Math.trunc(pages)));
+  const collected: InsertProductCatalog[] = [];
+  let pagesFetched = 0;
+  let hasMore = true;
+
+  for (let page = 0; page < requestedPages; page += 1) {
+    const rawProducts = await fetchDwapricePage(startOffset + page * PAGE_SIZE, 30_000);
+    collected.push(...rawProducts.map(normalizeDwapriceProduct).filter((product): product is InsertProductCatalog => Boolean(product)));
+    pagesFetched += 1;
+    if (rawProducts.length < PAGE_SIZE) {
+      hasMore = false;
+      break;
+    }
+    if (page < requestedPages - 1) await wait(120);
+  }
+
+  const items = keepSourceOrder(collected);
+  await db.upsertCatalogProducts(items);
+  const current = await db.getCatalogStatus();
+  await db.saveCatalogSyncState({
+    nextOffset: current.nextOffset,
+    isComplete: current.isComplete,
+    lastLatestSyncAt: new Date(),
+    lastError: null,
+  });
+
+  return { items, offset: startOffset, nextOffset: startOffset + pagesFetched * PAGE_SIZE, hasMore };
+}
+
 export async function syncCatalogBatch(maxPages = 20) {
   const status = await db.getCatalogStatus();
   if (status.isComplete) return { ...status, pagesFetched: 0, productsFetched: 0, completedNow: false };
@@ -101,11 +146,8 @@ export async function syncCatalogBatch(maxPages = 20) {
   }
 }
 
+/** فحص خفيف لآخر 100 عنصر لاستخدام المزامنة الدورية أثناء فتح التطبيق. */
 export async function refreshLatestPrices() {
-  const rawProducts = await fetchDwapricePage(0, 30_000);
-  const products = rawProducts.map(normalizeDwapriceProduct).filter((product): product is InsertProductCatalog => Boolean(product));
-  await db.upsertCatalogProducts(products);
-  const current = await db.getCatalogStatus();
-  await db.saveCatalogSyncState({ nextOffset: current.nextOffset, isComplete: current.isComplete, lastLatestSyncAt: new Date(), lastError: null });
-  return { ...(await db.getCatalogStatus()), productsFetched: products.length };
+  const feed = await fetchLatestPriceFeed(0, 1);
+  return { ...(await db.getCatalogStatus()), productsFetched: feed.items.length };
 }
