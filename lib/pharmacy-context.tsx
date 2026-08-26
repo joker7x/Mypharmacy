@@ -1,9 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ReactNode, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-type LocalDatabase = { execAsync: (source: string) => Promise<void>; getFirstAsync: <T>(source: string) => Promise<T | null>; runAsync: (source: string, ...params: unknown[]) => Promise<unknown>; closeAsync: () => Promise<void> };
+import { createLocalStorage, type LocalStorage } from "./local-storage";
 
-const STORAGE_KEY = "saydalty-local-data-v1";
-const SQLITE_DB_NAME = "saydalty.db";
 
 export type Medication = {
   id: string;
@@ -152,36 +150,25 @@ async function removeExpiredOrderAttachments(state: PharmacyState) {
 export function PharmacyProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PharmacyState>(createDemoState);
   const [isReady, setIsReady] = useState(false);
-  const databaseRef = useRef<LocalDatabase | null>(null);
+  const storageRef = useRef<LocalStorage | null>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        let stored: string | null = null;
-        if (typeof document !== "undefined") {
-          stored = await AsyncStorage.getItem(STORAGE_KEY);
-        } else {
-          const { openDatabaseAsync } = await import("expo-sqlite");
-          const database = (await openDatabaseAsync(SQLITE_DB_NAME)) as unknown as LocalDatabase;
-          await database.execAsync("PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS app_state (id INTEGER PRIMARY KEY NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL);");
-          databaseRef.current = database;
-          const row = await database.getFirstAsync<{ payload: string }>("SELECT payload FROM app_state WHERE id = 1");
-          stored = row?.payload ?? await AsyncStorage.getItem(STORAGE_KEY);
-          if (stored && !row) await database.runAsync("INSERT INTO app_state (id, payload, updated_at) VALUES (1, ?, ?)", stored, new Date().toISOString());
-        }
+        const storage = await createLocalStorage();
+        storageRef.current = storage;
+        const stored = await storage.get();
         const loaded = stored ? normalizePharmacyState(JSON.parse(stored) as Partial<PharmacyState>) : createDemoState();
         setState(await removeExpiredOrderAttachments(loaded));
       } catch { setState(createDemoState()); } finally { setIsReady(true); }
     };
     void load();
-    return () => { void databaseRef.current?.closeAsync(); };
+    return () => { void storageRef.current?.close(); };
   }, []);
 
   useEffect(() => {
-    if (!isReady) return;
-    const payload = JSON.stringify(state);
-    if (databaseRef.current) void databaseRef.current.runAsync("INSERT INTO app_state (id, payload, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at", payload, new Date().toISOString());
-    else void AsyncStorage.setItem(STORAGE_KEY, payload);
+    if (!isReady || !storageRef.current) return;
+    void storageRef.current.set(JSON.stringify(state));
   }, [isReady, state]);
 
   const value = useMemo<PharmacyContextValue>(() => ({
