@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { memo, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { memo, useDeferredValue, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { Badge, COLORS, PageHeader, RoundIcon } from "@/components/app-ui";
@@ -49,11 +49,8 @@ export default function CatalogScreen() {
   const searchQuery = trpc.catalog.search.useQuery({ query: canSearch ? query : "xx", limit: PAGE_SIZE, offset }, { enabled: canSearch, staleTime: 180_000, refetchOnMount: false });
   const refreshMutation = trpc.catalog.refreshLatest.useMutation();
   const result = canSearch ? searchQuery.data : latestQuery.data;
-  const products = useMemo(() => {
-    const items = (result?.items ?? []) as CatalogProduct[];
-    if (!canSearch && sort === "latest") return [...items].sort((a, b) => Number(b.sourceUpdatedAt) - Number(a.sourceUpdatedAt));
-    return items;
-  }, [canSearch, result?.items, sort]);
+  // مسار latest في المصدر يعيد الأصناف من الأحدث إلى الأقدم؛ نحافظ على نفس التسلسل بلا فرز محلي.
+  const products = (result?.items ?? []) as CatalogProduct[];
   const total = result?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const busy = canSearch ? searchQuery.isFetching : latestQuery.isFetching;
