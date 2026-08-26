@@ -26,7 +26,7 @@ export type Shift = { id: string; pharmacistName: string; openingCash: number; s
 export type Expense = { id: string; title: string; amount: number; category: "توريد" | "تشغيل" | "أخرى"; createdAt: string; orderId?: string; paidAmount?: number; shiftId?: string };
 export type CustomerDebt = { id: string; customerName: string; phone?: string; total: number; paid: number; createdAt: string; note?: string };
 export type PharmacySettings = { imageRetentionDays: number };
-export type ReorderRecord = { medicationId: string; markedAt: string; quantityAtMark: number };
+export type ReorderRecord = { medicationId: string; markedAt: string; quantityAtMark: number; manual?: boolean; status?: "needed" | "ordered" };
 export type ReorderNeed = { medication: Medication; status: "needed" | "ordered"; resumed: boolean; orderedAt?: string };
 export type PharmacyAlert = { id: string; medicationId: string; title: string; detail: string; severity: "high" | "medium" | "low"; kind: "stock" | "expiry" };
 type PharmacyState = { medications: Medication[]; sales: Sale[]; suppliers: Supplier[]; incomingOrders: IncomingOrder[]; reorderRecords: ReorderRecord[]; shifts: Shift[]; expenses: Expense[]; debts: CustomerDebt[]; settings: PharmacySettings };
@@ -42,6 +42,7 @@ type PharmacyContextValue = PharmacyState & {
   addSupplier: (supplier: Omit<Supplier, "id" | "lastOrder">) => void;
   addIncomingOrder: (order: Omit<IncomingOrder, "id" | "createdAt">) => void;
   markReorderOrdered: (medicationId: string) => void;
+  addReorderNeedFromCatalog: (medication: Omit<Medication, "id">) => void;
   startShift: (pharmacistName: string, openingCash: number) => boolean;
   closeShift: (shiftId: string, actualCash: number, note?: string) => void;
   addExpense: (expense: Omit<Expense, "id" | "createdAt">) => void;
@@ -119,11 +120,11 @@ export const buildAlerts = (medications: Medication[]): PharmacyAlert[] => {
 export const buildReorderNeeds = (medications: Medication[], records: ReorderRecord[]): ReorderNeed[] => {
   const recordByMedication = new Map(records.map((record) => [record.medicationId, record]));
   return medications
-    .filter((medication) => medication.quantity <= medication.reorderLevel)
+    .filter((medication) => medication.quantity <= medication.reorderLevel || Boolean(recordByMedication.get(medication.id)?.manual))
     .map((medication) => {
       const record = recordByMedication.get(medication.id);
-      const resumed = Boolean(record && medication.quantity < record.quantityAtMark);
-      const status: ReorderNeed["status"] = record && !resumed ? "ordered" : "needed";
+      const resumed = Boolean(!record?.manual && record && medication.quantity < record.quantityAtMark);
+      const status: ReorderNeed["status"] = record?.manual ? (record.status ?? "needed") : record && !resumed ? "ordered" : "needed";
       return { medication, status, resumed, orderedAt: record?.markedAt };
     })
     .sort((a, b) => {
@@ -217,9 +218,16 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
     updateSettings: (settings) => setState((current) => ({ ...current, settings: { ...current.settings, ...settings } })),
     markReorderOrdered: (medicationId) => setState((current) => {
       const medication = current.medications.find((item) => item.id === medicationId);
-      if (!medication || medication.quantity > medication.reorderLevel) return current;
-      const record: ReorderRecord = { medicationId, markedAt: new Date().toISOString(), quantityAtMark: medication.quantity };
+      const existing = current.reorderRecords.find((item) => item.medicationId === medicationId);
+      if (!medication || (!existing?.manual && medication.quantity > medication.reorderLevel)) return current;
+      const record: ReorderRecord = { medicationId, markedAt: new Date().toISOString(), quantityAtMark: medication.quantity, manual: existing?.manual, status: "ordered" };
       return { ...current, reorderRecords: [record, ...current.reorderRecords.filter((item) => item.medicationId !== medicationId)] };
+    }),
+    addReorderNeedFromCatalog: (medication) => setState((current) => {
+      const existing = current.medications.find((item) => (medication.catalogId && item.catalogId === medication.catalogId) || (medication.barcode && item.barcode === medication.barcode) || item.sku === medication.sku);
+      const target = existing ?? { ...medication, id: makeId("med") };
+      const record: ReorderRecord = { medicationId: target.id, markedAt: new Date().toISOString(), quantityAtMark: target.quantity, manual: true, status: "needed" };
+      return { ...current, medications: existing ? current.medications : [target, ...current.medications], reorderRecords: [record, ...current.reorderRecords.filter((item) => item.medicationId !== target.id)] };
     }),
     restoreDemoData: () => setState(createDemoState()),
     activeShift: state.shifts.find((shift) => !shift.closedAt),
