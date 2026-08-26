@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: { getItem: vi.fn(), setItem: vi.fn() },
 }));
+vi.mock("expo-file-system", () => ({ File: class { delete() {} } }));
+vi.mock("expo-sqlite", () => ({ openDatabaseAsync: vi.fn() }));
 
 import { calculateOrderTotal, getUnitPrice, getUnitsPerPackage, normalizePharmacyState, type CartItem, type IncomingOrder } from "./pharmacy-context";
 
@@ -23,7 +25,7 @@ describe("إدارة بيانات الطلبيات المحلية", () => {
       createdAt: "2026-08-24T12:00:00.000Z",
     };
     const state = normalizePharmacyState({ medications: [], sales: [], suppliers: [], incomingOrders: [order] });
-    expect(state.incomingOrders).toEqual([order]);
+    expect(state.incomingOrders).toEqual([{ ...order, status: "قيد الانتظار" }]);
   });
 
   it("يحسب إجمالي عناصر الطلب بدقة", () => {

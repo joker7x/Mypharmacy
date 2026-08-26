@@ -1,25 +1,30 @@
-import { router } from "expo-router";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useMemo } from "react";
+import { Text, View } from "react-native";
 
-import { Card, COLORS, PageHeader, RoundIcon, SectionTitle, commonStyles } from "@/components/app-ui";
-import { IconSymbol } from "@/components/ui/icon-symbol";
+import { AdminCard, AdminShell, StatTile, adminStyles } from "@/components/local-admin-ui";
+import { COLORS } from "@/components/app-ui";
 import { formatCurrency, usePharmacy } from "@/lib/pharmacy-context";
-import { ScreenContainer } from "@/components/screen-container";
 
 export default function ReportsScreen() {
-  const { sales, medications, alerts } = usePharmacy();
-  const todaySales = sales.filter((sale) => new Date(sale.createdAt).toDateString() === new Date().toDateString());
-  const revenue = todaySales.reduce((sum, sale) => sum + sale.total, 0);
-  const units = todaySales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.quantity, 0), 0);
-  const topItems = Object.values(sales.flatMap((sale) => sale.items).reduce<Record<string, { name: string; quantity: number }>>((acc, item) => ({ ...acc, [item.medicationId]: { name: item.name, quantity: (acc[item.medicationId]?.quantity ?? 0) + item.quantity } }), {})).sort((a, b) => b.quantity - a.quantity).slice(0, 3);
-  return <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-background" className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}>
-    <TouchableOpacity onPress={() => router.back()} style={styles.back} activeOpacity={0.75}><IconSymbol name="chevron.right" size={20} color={COLORS.ink} /><Text style={styles.backText}>رجوع</Text></TouchableOpacity><PageHeader title="التقارير" subtitle="ملخص تشغيلي مبسط لليوم" />
-    <View style={styles.summaryGrid}><Card style={styles.summaryCard}><RoundIcon name="chart.line.uptrend.xyaxis" /><Text style={styles.summaryValue}>{formatCurrency(revenue)}</Text><Text style={styles.summaryLabel}>إجمالي المبيعات</Text></Card><Card style={styles.summaryCard}><RoundIcon name="doc.text.fill" color="#496C9C" background="#E8F0FA" /><Text style={styles.summaryValue}>{todaySales.length}</Text><Text style={styles.summaryLabel}>فواتير اليوم</Text></Card><Card style={styles.summaryCard}><RoundIcon name="cart.fill" color={COLORS.success} background="#E4F6EE" /><Text style={styles.summaryValue}>{units}</Text><Text style={styles.summaryLabel}>وحدات مباعة</Text></Card></View>
-    <SectionTitle title="الأصناف الأكثر طلبًا" /><Card>{topItems.map((item, index) => <View key={item.name} style={[styles.topItem, index < topItems.length - 1 && styles.topBorder]}><Text style={styles.topValue}>{item.quantity} وحدات</Text><View style={styles.topText}><Text style={styles.topName}>{item.name}</Text><Text style={styles.topRank}>المركز {index + 1}</Text></View><View style={styles.rank}><Text style={styles.rankText}>{index + 1}</Text></View></View>)}{!topItems.length ? <Text style={styles.empty}>لا توجد مبيعات مسجلة بعد.</Text> : null}</Card>
-    <SectionTitle title="صحة المخزون" /><Card><View style={styles.healthRow}><Text style={styles.healthValue}>{medications.length}</Text><Text style={styles.healthLabel}>إجمالي الأصناف النشطة</Text></View><View style={commonStyles.rowDivider} /><View style={styles.healthRow}><Text style={[styles.healthValue, { color: alerts.length ? COLORS.warning : COLORS.success }]}>{alerts.length}</Text><Text style={styles.healthLabel}>تنبيهات تتطلب متابعة</Text></View></Card>
-  </ScrollView></ScreenContainer>;
+  const { sales, expenses, debts, medications, activeShift } = usePharmacy();
+  const salesTotal = useMemo(() => sales.reduce((sum, sale) => sum + sale.total, 0), [sales]);
+  const expensesTotal = useMemo(() => expenses.reduce((sum, expense) => sum + expense.amount, 0), [expenses]);
+  const debtTotal = useMemo(() => debts.reduce((sum, debt) => sum + Math.max(0, debt.total - debt.paid), 0), [debts]);
+  const stockUnits = useMemo(() => medications.reduce((sum, medication) => sum + medication.quantity, 0), [medications]);
+  const lowStock = medications.filter((medication) => medication.quantity <= medication.reorderLevel).length;
+
+  return (
+    <AdminShell title="التقارير" subtitle="صورة سريعة عن حركة الصيدلية والقرارات التي تحتاج متابعة">
+      <View style={{ flexDirection: "row-reverse", gap: 9, marginBottom: 9 }}><StatTile label="إجمالي المبيعات" value={formatCurrency(salesTotal)} /><StatTile label="صافي قبل المصروفات" value={formatCurrency(salesTotal - expensesTotal)} accent={COLORS.primary} /></View>
+      <View style={{ flexDirection: "row-reverse", gap: 9, marginBottom: 14 }}><StatTile label="وحدات المخزون" value={stockUnits.toLocaleString("ar-EG")} accent={COLORS.warning} /><StatTile label="أصناف تحتاج متابعة" value={lowStock.toLocaleString("ar-EG")} accent={lowStock ? COLORS.danger : COLORS.primary} /></View>
+      <Text style={adminStyles.sectionHeading}>ملخص مالي</Text>
+      <AdminCard><ReportRow label="عدد الفواتير" value={sales.length.toLocaleString("ar-EG")} /><ReportRow label="مبيعات نقدية" value={formatCurrency(sales.filter((sale) => sale.paymentMethod === "نقدي").reduce((sum, sale) => sum + sale.total, 0))} /><ReportRow label="مبيعات بطاقة ومحفظة" value={formatCurrency(sales.filter((sale) => sale.paymentMethod !== "نقدي").reduce((sum, sale) => sum + sale.total, 0))} /><ReportRow label="المصروفات" value={formatCurrency(expensesTotal)} danger /><ReportRow label="ديون العملاء المتبقية" value={formatCurrency(debtTotal)} danger /></AdminCard>
+      <Text style={adminStyles.sectionHeading}>حالة التشغيل</Text>
+      <AdminCard style={{ backgroundColor: activeShift ? "#ECF8F4" : "#FFF8E9", borderColor: activeShift ? "#B9E2D5" : "#F0D99D" }}><Text style={{ color: activeShift ? COLORS.primary : COLORS.warning, fontSize: 14, fontWeight: "900", textAlign: "right" }}>{activeShift ? `وردية مفتوحة · ${activeShift.pharmacistName}` : "لا توجد وردية مفتوحة"}</Text><Text style={{ color: COLORS.ink, fontSize: 11, lineHeight: 18, textAlign: "right", marginTop: 5 }}>{activeShift ? "المبيعات الجديدة تُربط بالوردية الحالية وتظهر في تقرير الإغلاق." : "ابدأ وردية من قسم الإدارة قبل تسجيل مبيعات جديدة."}</Text></AdminCard>
+    </AdminShell>
+  );
 }
 
-const styles = StyleSheet.create({
-  back: { alignSelf: "flex-end", flexDirection: "row-reverse", alignItems: "center", gap: 3, marginBottom: 17, padding: 4 }, backText: { color: COLORS.ink, fontSize: 13, fontWeight: "800" }, summaryGrid: { flexDirection: "row-reverse", gap: 9 }, summaryCard: { flex: 1, padding: 12, alignItems: "flex-end" }, summaryValue: { color: COLORS.ink, fontSize: 17, fontWeight: "900", marginTop: 12 }, summaryLabel: { color: COLORS.muted, fontSize: 10, fontWeight: "700", textAlign: "right", marginTop: 3 }, topItem: { flexDirection: "row-reverse", alignItems: "center", gap: 11, paddingVertical: 10 }, topBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border }, rank: { width: 28, height: 28, borderRadius: 10, backgroundColor: COLORS.mint, alignItems: "center", justifyContent: "center" }, rankText: { color: COLORS.primary, fontSize: 12, fontWeight: "900" }, topText: { flex: 1, alignItems: "flex-end" }, topName: { color: COLORS.ink, fontSize: 13, fontWeight: "800", textAlign: "right" }, topRank: { color: COLORS.muted, fontSize: 11, marginTop: 3 }, topValue: { color: COLORS.primary, fontSize: 12, fontWeight: "900" }, healthRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" }, healthValue: { color: COLORS.primary, fontSize: 22, fontWeight: "900" }, healthLabel: { color: COLORS.ink, fontSize: 13, fontWeight: "700" }, empty: { color: COLORS.muted, fontSize: 12, textAlign: "right" },
-});
+function ReportRow({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {
+  return <View style={{ flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: COLORS.border }}><Text style={{ color: COLORS.ink, fontSize: 12, fontWeight: "700" }}>{label}</Text><Text style={{ color: danger ? COLORS.danger : COLORS.primary, fontSize: 13, fontWeight: "900" }}>{value}</Text></View>;
+}

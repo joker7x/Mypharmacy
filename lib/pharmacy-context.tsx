@@ -1,7 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
+import { ReactNode, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+type LocalDatabase = { execAsync: (source: string) => Promise<void>; getFirstAsync: <T>(source: string) => Promise<T | null>; runAsync: (source: string, ...params: unknown[]) => Promise<unknown>; closeAsync: () => Promise<void> };
 
 const STORAGE_KEY = "saydalty-local-data-v1";
+const SQLITE_DB_NAME = "saydalty.db";
 
 export type Medication = {
   id: string;
@@ -18,13 +20,18 @@ export type Medication = {
 };
 
 export type CartItem = { medicationId: string; name: string; unitPrice: number; quantity: number; unitLabel?: string };
-export type Sale = { id: string; createdAt: string; items: CartItem[]; total: number; paymentMethod: "نقدي" | "بطاقة" | "محفظة" };
+export type Sale = { id: string; createdAt: string; items: CartItem[]; total: number; paymentMethod: "نقدي" | "بطاقة" | "محفظة"; shiftId?: string; cashReceived?: number; change?: number };
 export type Supplier = { id: string; name: string; company: string; phone: string; lastOrder: string };
-export type IncomingOrder = { id: string; supplierName: string; sourceType: "شركة" | "مكتب" | "مورد آخر"; referenceNumber?: string; total?: number; notes?: string; invoiceUri?: string; createdAt: string };
+export type IncomingOrderItem = { medicationId?: string; catalogId?: string; name: string; quantity: number; unitCost: number; expiryDate?: string };
+export type IncomingOrder = { id: string; supplierName: string; sourceType: "شركة" | "مكتب" | "مورد آخر"; referenceNumber?: string; total?: number; notes?: string; invoiceUri?: string; receiptUri?: string; status?: "قيد الانتظار" | "تم الإرسال" | "تم الاستلام"; items?: IncomingOrderItem[]; receivedAt?: string; createdAt: string };
+export type Shift = { id: string; pharmacistName: string; openingCash: number; startedAt: string; closedAt?: string; actualCash?: number; difference?: number; note?: string };
+export type Expense = { id: string; title: string; amount: number; category: "توريد" | "تشغيل" | "أخرى"; createdAt: string; orderId?: string; paidAmount?: number };
+export type CustomerDebt = { id: string; customerName: string; phone?: string; total: number; paid: number; createdAt: string; note?: string };
+export type PharmacySettings = { imageRetentionDays: number };
 export type ReorderRecord = { medicationId: string; markedAt: string; quantityAtMark: number };
 export type ReorderNeed = { medication: Medication; status: "needed" | "ordered"; resumed: boolean; orderedAt?: string };
 export type PharmacyAlert = { id: string; medicationId: string; title: string; detail: string; severity: "high" | "medium" | "low"; kind: "stock" | "expiry" };
-type PharmacyState = { medications: Medication[]; sales: Sale[]; suppliers: Supplier[]; incomingOrders: IncomingOrder[]; reorderRecords: ReorderRecord[] };
+type PharmacyState = { medications: Medication[]; sales: Sale[]; suppliers: Supplier[]; incomingOrders: IncomingOrder[]; reorderRecords: ReorderRecord[]; shifts: Shift[]; expenses: Expense[]; debts: CustomerDebt[]; settings: PharmacySettings };
 
 type PharmacyContextValue = PharmacyState & {
   isReady: boolean;
@@ -33,10 +40,18 @@ type PharmacyContextValue = PharmacyState & {
   addMedication: (medication: Omit<Medication, "id">) => void;
   updateMedication: (id: string, medication: Omit<Medication, "id">) => void;
   deleteMedication: (id: string) => void;
-  completeSale: (items: CartItem[], paymentMethod: Sale["paymentMethod"]) => boolean;
+  completeSale: (items: CartItem[], paymentMethod: Sale["paymentMethod"], paymentDetails?: { cashReceived?: number; change?: number }) => boolean;
   addSupplier: (supplier: Omit<Supplier, "id" | "lastOrder">) => void;
   addIncomingOrder: (order: Omit<IncomingOrder, "id" | "createdAt">) => void;
   markReorderOrdered: (medicationId: string) => void;
+  startShift: (pharmacistName: string, openingCash: number) => boolean;
+  closeShift: (shiftId: string, actualCash: number, note?: string) => void;
+  addExpense: (expense: Omit<Expense, "id" | "createdAt">) => void;
+  addDebt: (debt: Omit<CustomerDebt, "id" | "createdAt">) => void;
+  settleDebt: (debtId: string, amount: number) => void;
+  receiveIncomingOrder: (orderId: string, items: IncomingOrderItem[], attachments?: { invoiceUri?: string; receiptUri?: string }) => boolean;
+  updateSettings: (settings: Partial<PharmacySettings>) => void;
+  activeShift?: Shift;
   restoreDemoData: () => void;
 };
 
@@ -68,6 +83,10 @@ const createDemoState = (): PharmacyState => ({
   ],
   incomingOrders: [],
   reorderRecords: [],
+  shifts: [],
+  expenses: [],
+  debts: [],
+  settings: { imageRetentionDays: 30 },
 });
 
 export const normalizePharmacyState = (stored: Partial<PharmacyState>): PharmacyState => {
@@ -76,8 +95,12 @@ export const normalizePharmacyState = (stored: Partial<PharmacyState>): Pharmacy
     medications: Array.isArray(stored.medications) ? stored.medications.map((medication) => ({ ...medication, unitsPerPackage: getUnitsPerPackage(medication) })) : demo.medications,
     sales: Array.isArray(stored.sales) ? stored.sales : demo.sales,
     suppliers: Array.isArray(stored.suppliers) ? stored.suppliers : demo.suppliers,
-    incomingOrders: Array.isArray(stored.incomingOrders) ? stored.incomingOrders : [],
+    incomingOrders: Array.isArray(stored.incomingOrders) ? stored.incomingOrders.map((order) => ({ status: "قيد الانتظار", ...order })) : [],
     reorderRecords: Array.isArray(stored.reorderRecords) ? stored.reorderRecords : [],
+    shifts: Array.isArray(stored.shifts) ? stored.shifts : [],
+    expenses: Array.isArray(stored.expenses) ? stored.expenses : [],
+    debts: Array.isArray(stored.debts) ? stored.debts : [],
+    settings: { imageRetentionDays: 30, ...(stored.settings ?? {}) },
   };
 };
 
@@ -111,19 +134,55 @@ export const buildReorderNeeds = (medications: Medication[], records: ReorderRec
 };
 
 export const calculateOrderTotal = (items: CartItem[]) => items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+export const calculateCashChange = (total: number, cashReceived: number) => Math.max(0, cashReceived - total);
+
+async function removeExpiredOrderAttachments(state: PharmacyState) {
+  const cutoff = Date.now() - state.settings.imageRetentionDays * 86_400_000;
+  const { File } = await import("expo-file-system");
+  const nextOrders = await Promise.all(state.incomingOrders.map(async (order) => {
+    if (new Date(order.createdAt).getTime() >= cutoff) return order;
+    for (const uri of [order.invoiceUri, order.receiptUri]) {
+      if (uri?.startsWith("file:")) { try { new File(uri).delete(); } catch { /* The file may already be removed by the system. */ } }
+    }
+    return { ...order, invoiceUri: undefined, receiptUri: undefined };
+  }));
+  return { ...state, incomingOrders: nextOrders };
+}
 
 export function PharmacyProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PharmacyState>(createDemoState);
   const [isReady, setIsReady] = useState(false);
+  const databaseRef = useRef<LocalDatabase | null>(null);
 
   useEffect(() => {
     const load = async () => {
-      try { const stored = await AsyncStorage.getItem(STORAGE_KEY); if (stored) setState(normalizePharmacyState(JSON.parse(stored) as Partial<PharmacyState>)); } catch { /* Start with demos if storage is unavailable. */ } finally { setIsReady(true); }
+      try {
+        let stored: string | null = null;
+        if (typeof document !== "undefined") {
+          stored = await AsyncStorage.getItem(STORAGE_KEY);
+        } else {
+          const { openDatabaseAsync } = await import("expo-sqlite");
+          const database = (await openDatabaseAsync(SQLITE_DB_NAME)) as unknown as LocalDatabase;
+          await database.execAsync("PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS app_state (id INTEGER PRIMARY KEY NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL);");
+          databaseRef.current = database;
+          const row = await database.getFirstAsync<{ payload: string }>("SELECT payload FROM app_state WHERE id = 1");
+          stored = row?.payload ?? await AsyncStorage.getItem(STORAGE_KEY);
+          if (stored && !row) await database.runAsync("INSERT INTO app_state (id, payload, updated_at) VALUES (1, ?, ?)", stored, new Date().toISOString());
+        }
+        const loaded = stored ? normalizePharmacyState(JSON.parse(stored) as Partial<PharmacyState>) : createDemoState();
+        setState(await removeExpiredOrderAttachments(loaded));
+      } catch { setState(createDemoState()); } finally { setIsReady(true); }
     };
     void load();
+    return () => { void databaseRef.current?.closeAsync(); };
   }, []);
 
-  useEffect(() => { if (isReady) void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [isReady, state]);
+  useEffect(() => {
+    if (!isReady) return;
+    const payload = JSON.stringify(state);
+    if (databaseRef.current) void databaseRef.current.runAsync("INSERT INTO app_state (id, payload, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at", payload, new Date().toISOString());
+    else void AsyncStorage.setItem(STORAGE_KEY, payload);
+  }, [isReady, state]);
 
   const value = useMemo<PharmacyContextValue>(() => ({
     ...state,
@@ -137,14 +196,37 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
       return { ...current, medications: current.medications.map((item) => item.id === id ? { ...medication, id } : item), reorderRecords: isRestocked ? current.reorderRecords.filter((record) => record.medicationId !== id) : current.reorderRecords };
     }),
     deleteMedication: (id) => setState((current) => ({ ...current, medications: current.medications.filter((item) => item.id !== id) })),
-    completeSale: (items, paymentMethod) => {
-      if (!items.length || items.some((item) => (state.medications.find((medication) => medication.id === item.medicationId)?.quantity ?? 0) < item.quantity)) return false;
-      const sale: Sale = { id: makeId("sale"), createdAt: new Date().toISOString(), items, total: calculateOrderTotal(items), paymentMethod };
+    completeSale: (items, paymentMethod, paymentDetails) => {
+      const activeShift = state.shifts.find((shift) => !shift.closedAt);
+      const total = calculateOrderTotal(items);
+      if (!activeShift || !items.length || items.some((item) => (state.medications.find((medication) => medication.id === item.medicationId)?.quantity ?? 0) < item.quantity)) return false;
+      if (paymentMethod === "نقدي" && (paymentDetails?.cashReceived ?? 0) < total) return false;
+      const sale: Sale = { id: makeId("sale"), createdAt: new Date().toISOString(), items, total, paymentMethod, shiftId: activeShift.id, cashReceived: paymentMethod === "نقدي" ? paymentDetails?.cashReceived : undefined, change: paymentMethod === "نقدي" ? paymentDetails?.change : undefined };
       setState((current) => ({ ...current, medications: current.medications.map((medication) => { const saleItem = items.find((item) => item.medicationId === medication.id); return saleItem ? { ...medication, quantity: medication.quantity - saleItem.quantity } : medication; }), sales: [sale, ...current.sales] }));
       return true;
     },
     addSupplier: (supplier) => setState((current) => ({ ...current, suppliers: [{ ...supplier, id: makeId("supplier"), lastOrder: "لم يتم الطلب بعد" }, ...current.suppliers] })),
-    addIncomingOrder: (order) => setState((current) => ({ ...current, incomingOrders: [{ ...order, id: makeId("order"), createdAt: new Date().toISOString() }, ...current.incomingOrders] })),
+    addIncomingOrder: (order) => setState((current) => ({ ...current, incomingOrders: [{ ...order, id: makeId("order"), status: order.status ?? "قيد الانتظار", createdAt: new Date().toISOString() }, ...current.incomingOrders] })),
+    startShift: (pharmacistName, openingCash) => {
+      if (state.shifts.some((shift) => !shift.closedAt) || !pharmacistName.trim() || openingCash < 0) return false;
+      setState((current) => ({ ...current, shifts: [{ id: makeId("shift"), pharmacistName: pharmacistName.trim(), openingCash, startedAt: new Date().toISOString() }, ...current.shifts] }));
+      return true;
+    },
+    closeShift: (shiftId, actualCash, note) => setState((current) => { const shift = current.shifts.find((item) => item.id === shiftId); if (!shift) return current; const cashSalesTotal = current.sales.filter((sale) => sale.shiftId === shiftId && sale.paymentMethod === "نقدي").reduce((sum, sale) => sum + sale.total, 0); return { ...current, shifts: current.shifts.map((item) => item.id === shiftId ? { ...item, closedAt: new Date().toISOString(), actualCash, difference: actualCash - (shift.openingCash + cashSalesTotal), note } : item) }; }),
+    addExpense: (expense) => setState((current) => ({ ...current, expenses: [{ ...expense, id: makeId("expense"), createdAt: new Date().toISOString() }, ...current.expenses] })),
+    addDebt: (debt) => setState((current) => ({ ...current, debts: [{ ...debt, id: makeId("debt"), createdAt: new Date().toISOString() }, ...current.debts] })),
+    settleDebt: (debtId, amount) => setState((current) => ({ ...current, debts: current.debts.map((debt) => debt.id === debtId ? { ...debt, paid: Math.min(debt.total, debt.paid + Math.max(0, amount)) } : debt) })),
+    receiveIncomingOrder: (orderId, items, attachments) => {
+      const order = state.incomingOrders.find((item) => item.id === orderId);
+      if (!order || order.status === "تم الاستلام") return false;
+      setState((current) => {
+        const medications = current.medications.map((medication) => { const line = items.find((item) => item.medicationId === medication.id); return line ? { ...medication, quantity: medication.quantity + line.quantity, price: line.unitCost * getUnitsPerPackage(medication) } : medication; });
+        const total = items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
+        return { ...current, medications, incomingOrders: current.incomingOrders.map((item) => item.id === orderId ? { ...item, status: "تم الاستلام", items, total, receivedAt: new Date().toISOString(), ...attachments } : item), expenses: [{ id: makeId("expense"), title: `توريد ${order.supplierName}`, category: "توريد", amount: total, paidAmount: total, orderId, createdAt: new Date().toISOString() }, ...current.expenses] };
+      });
+      return true;
+    },
+    updateSettings: (settings) => setState((current) => ({ ...current, settings: { ...current.settings, ...settings } })),
     markReorderOrdered: (medicationId) => setState((current) => {
       const medication = current.medications.find((item) => item.id === medicationId);
       if (!medication || medication.quantity > medication.reorderLevel) return current;
@@ -152,6 +234,7 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
       return { ...current, reorderRecords: [record, ...current.reorderRecords.filter((item) => item.medicationId !== medicationId)] };
     }),
     restoreDemoData: () => setState(createDemoState()),
+    activeShift: state.shifts.find((shift) => !shift.closedAt),
   }), [isReady, state]);
 
   return <PharmacyContext.Provider value={value}>{children}</PharmacyContext.Provider>;

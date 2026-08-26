@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: { getItem: vi.fn(), setItem: vi.fn() },
 }));
+vi.mock("expo-file-system", () => ({ File: class { delete() {} } }));
+vi.mock("expo-sqlite", () => ({ openDatabaseAsync: vi.fn() }));
 
-import { buildAlerts, buildReorderNeeds, calculateOrderTotal, type Medication, type ReorderRecord } from "../lib/pharmacy-context";
+import { buildAlerts, buildReorderNeeds, calculateCashChange, calculateOrderTotal, type Medication, type ReorderRecord } from "../lib/pharmacy-context";
 
 const medication = (overrides: Partial<Medication> = {}): Medication => ({
   id: "med-1",
@@ -24,6 +26,11 @@ describe("حسابات الصيدلية", () => {
       { medicationId: "a", name: "أ", unitPrice: 50, quantity: 2 },
       { medicationId: "b", name: "ب", unitPrice: 15, quantity: 3 },
     ])).toBe(145);
+  });
+
+  it("يحسب باقي الدفع النقدي ولا يسمح بقيمة سالبة", () => {
+    expect(calculateCashChange(145, 200)).toBe(55);
+    expect(calculateCashChange(145, 100)).toBe(0);
   });
 
   it("ينشئ تنبيهًا عالي الأولوية عندما يهبط المخزون إلى مستوى حرج", () => {

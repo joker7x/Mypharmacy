@@ -1,22 +1,32 @@
-import { router } from "expo-router";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useState } from "react";
+import { Alert, Text, View } from "react-native";
 
-import { COLORS, PageHeader, RoundIcon, commonStyles } from "@/components/app-ui";
-import { IconSymbol } from "@/components/ui/icon-symbol";
+import { AdminButton, AdminCard, AdminField, AdminShell, adminStyles } from "@/components/local-admin-ui";
+import { COLORS } from "@/components/app-ui";
 import { usePharmacy } from "@/lib/pharmacy-context";
-import { ScreenContainer } from "@/components/screen-container";
 
 export default function SettingsScreen() {
-  const { restoreDemoData } = usePharmacy();
-  const reset = () => Alert.alert("استعادة البيانات التجريبية", "سيتم استبدال البيانات المحلية الحالية ببيانات البداية التجريبية.", [{ text: "إلغاء", style: "cancel" }, { text: "استعادة", style: "destructive", onPress: restoreDemoData }]);
-  return <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-background" className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}>
-    <TouchableOpacity onPress={() => router.back()} style={styles.back} activeOpacity={0.75}><IconSymbol name="chevron.right" size={20} color={COLORS.ink} /><Text style={styles.backText}>رجوع</Text></TouchableOpacity><PageHeader title="الإعدادات" subtitle="إدارة بيانات وتفضيلات التطبيق" />
-    <View style={styles.infoCard}><RoundIcon name="cross.case.fill" /><View style={styles.infoText}><Text style={styles.infoTitle}>صيدليتي</Text><Text style={styles.infoSubtitle}>إدارة محلية للمخزون والمبيعات</Text></View></View>
-    <Text style={styles.section}>البيانات</Text><TouchableOpacity onPress={reset} style={styles.setting} activeOpacity={0.8}><RoundIcon name="arrow.clockwise" color={COLORS.danger} background={COLORS.softDanger} /><View style={styles.settingText}><Text style={styles.settingTitle}>استعادة البيانات التجريبية</Text><Text style={styles.settingSubtitle}>يستبدل المخزون والمبيعات الحالية</Text></View><IconSymbol name="chevron.left" size={20} color={COLORS.muted} /></TouchableOpacity>
-    <Text style={styles.note}>تُحفظ البيانات الحالية محليًا على الجهاز. لإتاحة الاستخدام لفريق العمل أو عبر أجهزة متعددة، يمكن إضافة مزامنة سحابية وصلاحيات مستخدمين في المرحلة التالية.</Text>
-  </ScrollView></ScreenContainer>;
+  const { settings, updateSettings, restoreDemoData } = usePharmacy();
+  const [retention, setRetention] = useState(String(settings.imageRetentionDays));
+  const save = () => {
+    const days = Number(retention);
+    if (!Number.isInteger(days) || days < 1 || days > 3650) return Alert.alert("قيمة غير صحيحة", "اختر مدة بين يوم واحد و3650 يومًا.");
+    updateSettings({ imageRetentionDays: days });
+    Alert.alert("تم الحفظ", `سيحتفظ التطبيق بصور الفواتير لمدة ${days} يومًا.`);
+  };
+  const reset = () => Alert.alert("إعادة بيانات العرض", "سيتم استبدال البيانات المحلية الحالية ببيانات العرض. هل تريد المتابعة؟", [{ text: "إلغاء", style: "cancel" }, { text: "إعادة", style: "destructive", onPress: restoreDemoData }]);
+  return (
+    <AdminShell title="إعدادات الصيدلية" subtitle="تحكم في البيانات المحلية وسياسة الاحتفاظ بالصور">
+      <AdminCard>
+        <Text style={{ color: COLORS.ink, fontSize: 15, fontWeight: "900", textAlign: "right", marginBottom: 6 }}>البيانات المحلية</Text>
+        <Text style={{ color: COLORS.muted, fontSize: 11, lineHeight: 18, textAlign: "right", marginBottom: 14 }}>يعمل التطبيق حاليًا دون Supabase. تُحفظ المبيعات والمخزون والشيفتات والطلبيات والمصروفات على هذا الجهاز داخل قاعدة SQLite المحلية.</Text>
+        <View style={{ flexDirection: "row-reverse", gap: 8, alignItems: "center" }}><View style={{ flex: 1 }}><AdminField label="الاحتفاظ بصور الفواتير (يوم)" value={retention} onChangeText={setRetention} placeholder="30" keyboardType="number-pad" /></View><Text style={{ color: COLORS.primary, fontSize: 24, fontWeight: "900", marginTop: 17 }}>⌁</Text></View>
+        <AdminButton title="حفظ الإعدادات" onPress={save} />
+      </AdminCard>
+      <Text style={adminStyles.sectionHeading}>إدارة بيانات العرض</Text>
+      <AdminCard><Text style={{ color: COLORS.muted, fontSize: 11, lineHeight: 18, textAlign: "right", marginBottom: 12 }}>استخدم هذا الخيار فقط لإرجاع أمثلة العرض. لن تحتاجه في الاستخدام اليومي.</Text><AdminButton title="إعادة بيانات العرض" onPress={reset} secondary /></AdminCard>
+      <Text style={adminStyles.sectionHeading}>حالة المزامنة</Text>
+      <AdminCard style={{ backgroundColor: "#FFF8E9", borderColor: "#F0D99D" }}><Text style={{ color: COLORS.warning, fontSize: 14, fontWeight: "900", textAlign: "right" }}>تشغيل محلي مؤقت</Text><Text style={{ color: COLORS.ink, fontSize: 11, lineHeight: 18, textAlign: "right", marginTop: 5 }}>المزامنة السحابية متوقفة حاليًا بناءً على اختيارك. يمكن تفعيلها لاحقًا دون تغيير نموذج التشغيل المحلي.</Text></AdminCard>
+    </AdminShell>
+  );
 }
-
-const styles = StyleSheet.create({
-  back: { alignSelf: "flex-end", flexDirection: "row-reverse", alignItems: "center", gap: 3, marginBottom: 17, padding: 4 }, backText: { color: COLORS.ink, fontSize: 13, fontWeight: "800" }, infoCard: { backgroundColor: COLORS.mint, borderRadius: 20, padding: 17, flexDirection: "row-reverse", alignItems: "center", gap: 12 }, infoText: { flex: 1, alignItems: "flex-end" }, infoTitle: { color: COLORS.primary, fontSize: 16, fontWeight: "900" }, infoSubtitle: { color: COLORS.primary, fontSize: 12, marginTop: 4 }, section: { color: COLORS.muted, fontSize: 12, fontWeight: "800", textAlign: "right", marginTop: 25, marginBottom: 9 }, setting: { backgroundColor: COLORS.surface, borderRadius: 20, borderColor: COLORS.border, borderWidth: 1, padding: 15, flexDirection: "row-reverse", alignItems: "center", gap: 12 }, settingText: { flex: 1, alignItems: "flex-end" }, settingTitle: { color: COLORS.ink, fontSize: 14, fontWeight: "800" }, settingSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 4, textAlign: "right" }, note: { color: COLORS.muted, fontSize: 12, lineHeight: 19, textAlign: "right", marginTop: 22 },
-});

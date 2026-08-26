@@ -13,12 +13,17 @@ const operations: Destination[] = [
   { title: "الطلبيات والفواتير", subtitle: "تسجيل توريد الموردين وحفظ الفواتير", icon: "doc.text.fill" as const, path: "/orders" },
   { title: "الموردون", subtitle: "جهات التوريد وبيانات التواصل", icon: "truck.box.fill" as const, path: "/suppliers" },
 ];
+const finance: Destination[] = [
+  { title: "الورديات", subtitle: "بدء وردية وإغلاقها بمطابقة نقدية", icon: "clock.fill" as const, path: "/shifts" },
+  { title: "المصروفات", subtitle: "تشغيل وتوريد ومتابعة الإجمالي", icon: "arrow.down.circle.fill" as const, path: "/expenses" },
+  { title: "حسابات العملاء", subtitle: "الآجل والمدفوع والمتبقي", icon: "person.crop.circle.fill" as const, path: "/debts" },
+];
 const management: Destination[] = [
   { title: "التقارير التشغيلية", subtitle: "المبيعات وحركة الأصناف", icon: "chart.line.uptrend.xyaxis" as const, path: "/reports" },
   { title: "إعدادات الصيدلية", subtitle: "إدارة البيانات وإعدادات التطبيق", icon: "gearshape.fill" as const, path: "/settings" },
 ];
 
-export default function MoreScreen() { return <ScreenContainer containerClassName="bg-background" className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}><PageHeader title="الإدارة" subtitle="نظّم بيانات الصيدلية وراجع مؤشرات التشغيل" /><LinearGradient colors={["rgba(23,107,104,0.96)", "rgba(39,82,121,0.94)"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.brandCard}><View style={styles.brandIcon}><IconSymbol name="cross.case.fill" size={30} color="#FFFFFF" /></View><View style={styles.brandText}><Text style={styles.brandName}>صيدليتي</Text><Text style={styles.brandSubtitle}>أدوات منظمة بعيدًا عن تدفق البيع السريع</Text></View></LinearGradient><Section heading="بيانات وتشغيل" items={operations} /><Section heading="متابعة وإدارة" items={management} /><Text style={styles.version}>بيانات التشغيل الأساسية محفوظة محليًا على هذا الجهاز</Text></ScrollView></ScreenContainer>; }
+export default function MoreScreen() { return <ScreenContainer containerClassName="bg-background" className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}><PageHeader title="الإدارة" subtitle="نظّم بيانات الصيدلية وراجع مؤشرات التشغيل" /><LinearGradient colors={["rgba(23,107,104,0.96)", "rgba(39,82,121,0.94)"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.brandCard}><View style={styles.brandIcon}><IconSymbol name="cross.case.fill" size={30} color="#FFFFFF" /></View><View style={styles.brandText}><Text style={styles.brandName}>صيدليتي</Text><Text style={styles.brandSubtitle}>أدوات منظمة بعيدًا عن تدفق البيع السريع</Text></View></LinearGradient><Section heading="بيانات وتشغيل" items={operations} /><Section heading="الورديات والمال" items={finance} /><Section heading="متابعة وإدارة" items={management} /><Text style={styles.version}>بيانات التشغيل الأساسية محفوظة محليًا على هذا الجهاز</Text></ScrollView></ScreenContainer>; }
 
 function Section({ heading, items }: { heading: string; items: Destination[] }) { return <View><Text style={styles.sectionHeading}>{heading}</Text><Card glass style={styles.menu}>{items.map((item, index) => <TouchableOpacity key={item.title} onPress={() => router.push(item.path as never)} style={[styles.menuItem, index < items.length - 1 && styles.menuBorder]} activeOpacity={0.8}><RoundIcon name={item.icon} /><View style={styles.menuText}><Text style={styles.menuTitle}>{item.title}</Text><Text style={styles.menuSubtitle}>{item.subtitle}</Text></View><IconSymbol name="chevron.left" size={20} color={COLORS.muted} /></TouchableOpacity>)}</Card></View>; }
 
