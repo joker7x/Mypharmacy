@@ -39,6 +39,7 @@ const MAPPING = {
   "arrow.down.circle.fill": "arrow-downward",
   "person.crop.circle.fill": "account-circle",
   "doc.text.fill": "receipt-long",
+  "list.bullet.clipboard.fill": "assignment",
   "books.vertical.fill": "menu-book",
   "arrow.triangle.2.circlepath": "sync",
   "camera.fill": "photo-camera",
