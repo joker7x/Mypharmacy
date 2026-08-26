@@ -1,39 +1,16 @@
 import { useMemo, useState } from "react";
-import { Alert, Text, View } from "react-native";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { AdminButton, AdminCard, AdminField, AdminShell, StatTile, adminStyles } from "@/components/local-admin-ui";
+import { AdminButton, AdminCard, AdminField, AdminShell } from "@/components/local-admin-ui";
 import { COLORS } from "@/components/app-ui";
 import { formatCurrency, usePharmacy } from "@/lib/pharmacy-context";
 
 export default function ExpensesScreen() {
   const { expenses, addExpense } = usePharmacy();
-  const [title, setTitle] = useState("");
-  const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState<"تشغيل" | "توريد" | "أخرى">("تشغيل");
+  const [showForm, setShowForm] = useState(false); const [title, setTitle] = useState(""); const [amount, setAmount] = useState(""); const [category, setCategory] = useState<"تشغيل" | "توريد" | "أخرى">("تشغيل");
   const total = useMemo(() => expenses.reduce((sum, expense) => sum + expense.amount, 0), [expenses]);
-
-  const save = () => {
-    const value = Number(amount);
-    if (!title.trim() || !value || value < 0) return Alert.alert("بيانات ناقصة", "اكتب وصف المصروف وقيمته.");
-    addExpense({ title: title.trim(), amount: value, category, paidAmount: value });
-    setTitle("");
-    setAmount("");
-    Alert.alert("تم الحفظ", "أضيف المصروف إلى السجل المحلي.");
-  };
-
-  return (
-    <AdminShell title="المصروفات" subtitle="سجّل تكلفة التشغيل والتوريد بعيدًا عن مبيعات اليوم">
-      <View style={{ flexDirection: "row-reverse", gap: 9, marginBottom: 14 }}><StatTile label="إجمالي المصروفات" value={formatCurrency(total)} accent={COLORS.danger} /><StatTile label="عدد العمليات" value={expenses.length.toLocaleString("ar-EG")} /></View>
-      <AdminCard>
-        <Text style={{ color: COLORS.ink, fontSize: 15, fontWeight: "900", textAlign: "right", marginBottom: 13 }}>إضافة مصروف</Text>
-        <AdminField label="وصف المصروف" value={title} onChangeText={setTitle} placeholder="مثال: كهرباء أو نقل" />
-        <AdminField label="القيمة" value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" />
-        <Text style={adminStyles.label}>التصنيف</Text>
-        <View style={{ flexDirection: "row-reverse", gap: 8, marginBottom: 12 }}>{(["تشغيل", "توريد", "أخرى"] as const).map((item) => <View key={item} style={{ flex: 1 }}><AdminButton title={item} onPress={() => setCategory(item)} secondary={category !== item} /></View>)}</View>
-        <AdminButton title="حفظ المصروف" onPress={save} />
-      </AdminCard>
-      <Text style={adminStyles.sectionHeading}>آخر المصروفات</Text>
-      {expenses.length ? expenses.slice(0, 30).map((expense) => <AdminCard key={expense.id} style={{ paddingVertical: 13, marginBottom: 9 }}><View style={{ flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }}><View style={{ flex: 1, alignItems: "flex-end" }}><Text style={{ color: COLORS.ink, fontSize: 13, fontWeight: "900" }}>{expense.title}</Text><Text style={{ color: COLORS.muted, fontSize: 10, marginTop: 4 }}>{expense.category} · {new Date(expense.createdAt).toLocaleDateString("ar-EG")}</Text></View><Text style={{ color: COLORS.danger, fontSize: 14, fontWeight: "900" }}>{formatCurrency(expense.amount)}</Text></View></AdminCard>) : <AdminCard><Text style={{ color: COLORS.muted, textAlign: "right", fontSize: 12 }}>سجل المصروفات فارغ حاليًا.</Text></AdminCard>}
-    </AdminShell>
-  );
+  const save = () => { const value = Number(amount); if (!title.trim() || !value || value < 0) return Alert.alert("بيانات ناقصة", "اكتب وصف المصروف وقيمته."); addExpense({ title: title.trim(), amount: value, category, paidAmount: value }); setTitle(""); setAmount(""); setShowForm(false); Alert.alert("تم الحفظ", "أضيف المصروف إلى السجل المحلي."); };
+  return <AdminShell title="المصروفات (Real-time)" subtitle="سجّل تكلفة التشغيل والتوريد وتأثيرها على صافي اليوم"><AdminCard style={styles.mainCard}><View style={styles.cardHeader}><View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>مباشر</Text></View><Text style={styles.cardTitle}>المصروفات</Text></View><View style={styles.hero}><Text style={styles.heroLabel}>مصروفات اليوم</Text><Text style={styles.heroValue}>{formatCurrency(total)}</Text><Text style={styles.heroUpdated}>آخر تحديث: الآن</Text></View><View style={styles.list}>{expenses.length ? expenses.slice(0, 20).map((expense) => <View key={expense.id} style={styles.expenseRow}><Text style={styles.expenseAmount}>{formatCurrency(expense.amount)}</Text><View style={styles.expenseInfo}><Text style={styles.expenseTitle}>{expense.title}</Text><Text style={styles.expenseMeta}>{expense.category} · {new Date(expense.createdAt).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</Text></View><View style={styles.expenseIcon}><Text style={styles.expenseIconText}>▧</Text></View></View>) : <Text style={styles.empty}>سجل المصروفات فارغ حاليًا.</Text>}</View><TouchableOpacity onPress={() => setShowForm((value) => !value)} style={styles.addLink} activeOpacity={0.8}><Text style={styles.addLinkText}>+ إضافة مصروف</Text></TouchableOpacity>{showForm ? <View style={styles.form}><AdminField label="وصف المصروف" value={title} onChangeText={setTitle} placeholder="مثال: كهرباء أو نقل" /><AdminField label="القيمة" value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" /><Text style={styles.categoryLabel}>التصنيف</Text><View style={styles.categories}>{(["تشغيل", "توريد", "أخرى"] as const).map((item) => <TouchableOpacity key={item} onPress={() => setCategory(item)} style={[styles.category, category === item && styles.categoryActive]} activeOpacity={0.8}><Text style={[styles.categoryText, category === item && styles.categoryTextActive]}>{item}</Text></TouchableOpacity>)}</View><AdminButton title="حفظ المصروف" onPress={save} /></View> : null}</AdminCard></AdminShell>;
 }
+
+const styles = StyleSheet.create({ mainCard: { padding: 20, borderRadius: 28 }, cardHeader: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }, cardTitle: { color: COLORS.ink, fontSize: 18, fontWeight: "900" }, liveBadge: { flexDirection: "row-reverse", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 14, backgroundColor: COLORS.mint }, liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.primary }, liveText: { color: COLORS.primary, fontSize: 11, fontWeight: "900" }, hero: { backgroundColor: COLORS.deep, borderRadius: 27, padding: 21, minHeight: 174 }, heroLabel: { color: "#A9B6B2", fontSize: 13, textAlign: "right", fontWeight: "800" }, heroValue: { color: "#FFFFFF", fontSize: 34, fontWeight: "900", textAlign: "right", marginTop: 9 }, heroUpdated: { color: "#82E3C0", fontSize: 11, fontWeight: "800", textAlign: "right", marginTop: 16 }, list: { marginTop: 13 }, expenseRow: { minHeight: 72, flexDirection: "row-reverse", alignItems: "center", gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border }, expenseInfo: { flex: 1, alignItems: "flex-end" }, expenseTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "900" }, expenseMeta: { color: COLORS.muted, fontSize: 10, marginTop: 4 }, expenseAmount: { color: COLORS.ink, fontSize: 14, fontWeight: "900", minWidth: 66, textAlign: "left" }, expenseIcon: { width: 45, height: 45, borderRadius: 15, backgroundColor: COLORS.softWarning, alignItems: "center", justifyContent: "center" }, expenseIconText: { color: COLORS.warning, fontSize: 24 }, addLink: { alignSelf: "flex-end", paddingTop: 16 }, addLinkText: { color: COLORS.primary, fontSize: 13, fontWeight: "900" }, form: { paddingTop: 15, marginTop: 13, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border }, categoryLabel: { color: COLORS.ink, fontSize: 12, fontWeight: "900", textAlign: "right", marginBottom: 8 }, categories: { flexDirection: "row-reverse", gap: 8, marginBottom: 12 }, category: { flex: 1, minHeight: 45, borderRadius: 16, backgroundColor: "#F2F1EE", alignItems: "center", justifyContent: "center" }, categoryActive: { backgroundColor: COLORS.primary }, categoryText: { color: COLORS.ink, fontSize: 11, fontWeight: "900" }, categoryTextActive: { color: "#FFFFFF" }, empty: { color: COLORS.muted, fontSize: 12, textAlign: "right", paddingVertical: 14 } });

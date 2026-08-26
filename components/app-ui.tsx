@@ -20,6 +20,10 @@ export const COLORS = {
   softBlue: "#DFF4F1",
 };
 
+export function ReferenceTopBar({ onAdd, onMenu }: { onAdd?: () => void; onMenu?: () => void }) {
+  return <View style={styles.referenceTopBar}><TouchableOpacity onPress={onMenu} style={styles.topIconButton} activeOpacity={0.7}><IconSymbol name="line.3.horizontal" size={27} color={COLORS.ink} /></TouchableOpacity><View style={styles.topActions}><TouchableOpacity onPress={onAdd} style={styles.topIconButton} activeOpacity={0.7}><IconSymbol name="plus.circle.fill" size={29} color={COLORS.ink} /></TouchableOpacity><TouchableOpacity style={styles.topIconButton} activeOpacity={0.7}><IconSymbol name="ellipsis.circle.fill" size={27} color={COLORS.ink} /></TouchableOpacity></View></View>;
+}
+
 export function PageHeader({ title, subtitle, action, onActionPress }: { title: string; subtitle?: string; action?: string; onActionPress?: () => void }) {
   return <View style={styles.header}><View style={styles.headerText}><Text style={styles.pageTitle}>{title}</Text>{subtitle ? <Text style={styles.pageSubtitle}>{subtitle}</Text> : null}</View>{action && onActionPress ? <TouchableOpacity onPress={onActionPress} style={styles.headerAction} activeOpacity={0.8}><Text style={styles.headerActionText}>{action}</Text><IconSymbol name="plus.circle.fill" size={18} color={COLORS.primary} /></TouchableOpacity> : null}</View>;
 }
@@ -61,6 +65,9 @@ export const commonStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  referenceTopBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 45, marginBottom: 14 },
+  topActions: { flexDirection: "row", alignItems: "center", gap: 14 },
+  topIconButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
   header: { flexDirection: "row-reverse", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 23 },
   headerText: { flex: 1, alignItems: "flex-end" },
   pageTitle: { color: COLORS.ink, fontSize: 29, lineHeight: 36, fontWeight: "900", textAlign: "right", letterSpacing: -0.5 },
