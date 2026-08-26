@@ -34,6 +34,8 @@ const MAPPING = {
   "checkmark.circle.fill": "check-circle",
   "exclamationmark.triangle.fill": "warning-amber",
   "clock.fill": "schedule",
+  "arrow.down.circle.fill": "arrow-downward",
+  "person.crop.circle.fill": "account-circle",
   "doc.text.fill": "receipt-long",
   "books.vertical.fill": "menu-book",
   "arrow.triangle.2.circlepath": "sync",

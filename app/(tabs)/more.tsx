@@ -1,30 +1,49 @@
 import { router } from "expo-router";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 
-import { Card, COLORS, PageHeader, RoundIcon, commonStyles } from "@/components/app-ui";
+import { Card, COLORS, PageHeader, PharmacyMark, RoundIcon, commonStyles } from "@/components/app-ui";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { ScreenContainer } from "@/components/screen-container";
 
 type Destination = { title: string; subtitle: string; icon: Parameters<typeof RoundIcon>[0]["name"]; path: string };
 
 const operations: Destination[] = [
-  { title: "دليل الأدوية والأسعار", subtitle: "بحث بالاسم والباركود ومتابعة التغيرات", icon: "books.vertical.fill" as const, path: "/catalog" },
-  { title: "الطلبيات والفواتير", subtitle: "تسجيل توريد الموردين وحفظ الفواتير", icon: "doc.text.fill" as const, path: "/orders" },
-  { title: "الموردون", subtitle: "جهات التوريد وبيانات التواصل", icon: "truck.box.fill" as const, path: "/suppliers" },
+  { title: "دليل الأدوية والأسعار", subtitle: "بحث بالاسم والباركود ومتابعة التغيرات", icon: "books.vertical.fill", path: "/catalog" },
+  { title: "الطلبيات والفواتير", subtitle: "تسجيل توريد الموردين وحفظ الفواتير", icon: "doc.text.fill", path: "/orders" },
+  { title: "الموردون", subtitle: "جهات التوريد وبيانات التواصل", icon: "truck.box.fill", path: "/suppliers" },
 ];
 const finance: Destination[] = [
-  { title: "الورديات", subtitle: "بدء وردية وإغلاقها بمطابقة نقدية", icon: "clock.fill" as const, path: "/shifts" },
-  { title: "المصروفات", subtitle: "تشغيل وتوريد ومتابعة الإجمالي", icon: "arrow.down.circle.fill" as const, path: "/expenses" },
-  { title: "حسابات العملاء", subtitle: "الآجل والمدفوع والمتبقي", icon: "person.crop.circle.fill" as const, path: "/debts" },
+  { title: "الورديات", subtitle: "بدء وردية وإغلاقها بمطابقة نقدية", icon: "clock.fill", path: "/shifts" },
+  { title: "المصروفات", subtitle: "تشغيل وتوريد ومتابعة الإجمالي", icon: "arrow.down.circle.fill", path: "/expenses" },
+  { title: "حسابات العملاء", subtitle: "الآجل والمدفوع والمتبقي", icon: "person.crop.circle.fill", path: "/debts" },
 ];
 const management: Destination[] = [
-  { title: "التقارير التشغيلية", subtitle: "المبيعات وحركة الأصناف", icon: "chart.line.uptrend.xyaxis" as const, path: "/reports" },
-  { title: "إعدادات الصيدلية", subtitle: "إدارة البيانات وإعدادات التطبيق", icon: "gearshape.fill" as const, path: "/settings" },
+  { title: "التقارير التشغيلية", subtitle: "المبيعات وحركة الأصناف", icon: "chart.line.uptrend.xyaxis", path: "/reports" },
+  { title: "إعدادات الصيدلية", subtitle: "إدارة البيانات وإعدادات التطبيق", icon: "gearshape.fill", path: "/settings" },
 ];
 
-export default function MoreScreen() { return <ScreenContainer containerClassName="bg-background" className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}><PageHeader title="الإدارة" subtitle="نظّم بيانات الصيدلية وراجع مؤشرات التشغيل" /><LinearGradient colors={["rgba(23,107,104,0.96)", "rgba(39,82,121,0.94)"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.brandCard}><View style={styles.brandIcon}><IconSymbol name="cross.case.fill" size={30} color="#FFFFFF" /></View><View style={styles.brandText}><Text style={styles.brandName}>صيدليتي</Text><Text style={styles.brandSubtitle}>أدوات منظمة بعيدًا عن تدفق البيع السريع</Text></View></LinearGradient><Section heading="بيانات وتشغيل" items={operations} /><Section heading="الورديات والمال" items={finance} /><Section heading="متابعة وإدارة" items={management} /><Text style={styles.version}>بيانات التشغيل الأساسية محفوظة محليًا على هذا الجهاز</Text></ScrollView></ScreenContainer>; }
+export default function MoreScreen() {
+  return <ScreenContainer className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}><PageHeader title="الإدارة" subtitle="أدوات الصيدلية مرتبة حسب المهمة، لا حسب التعقيد" /><View style={styles.identity}><PharmacyMark inverse size="small" /><View style={styles.identityText}><Text style={styles.identityTitle}>صيدليتي</Text><Text style={styles.identitySubtitle}>تشغيل محلي منظم، سريع، وقابل للمراجعة</Text></View><View style={styles.localPill}><Text style={styles.localPillText}>محلي</Text></View></View><Section heading="بيانات وتشغيل" items={operations} /><Section heading="الورديات والمال" items={finance} /><Section heading="متابعة وإدارة" items={management} /><Text style={styles.version}>تُحفظ بيانات التشغيل الأساسية على هذا الجهاز</Text></ScrollView></ScreenContainer>;
+}
 
-function Section({ heading, items }: { heading: string; items: Destination[] }) { return <View><Text style={styles.sectionHeading}>{heading}</Text><Card glass style={styles.menu}>{items.map((item, index) => <TouchableOpacity key={item.title} onPress={() => router.push(item.path as never)} style={[styles.menuItem, index < items.length - 1 && styles.menuBorder]} activeOpacity={0.8}><RoundIcon name={item.icon} /><View style={styles.menuText}><Text style={styles.menuTitle}>{item.title}</Text><Text style={styles.menuSubtitle}>{item.subtitle}</Text></View><IconSymbol name="chevron.left" size={20} color={COLORS.muted} /></TouchableOpacity>)}</Card></View>; }
+function Section({ heading, items }: { heading: string; items: Destination[] }) {
+  return <View><Text style={styles.sectionHeading}>{heading}</Text><Card style={styles.menu}>{items.map((item, index) => <TouchableOpacity key={item.title} onPress={() => router.push(item.path as never)} style={[styles.menuItem, index < items.length - 1 && styles.menuBorder]} activeOpacity={0.75}><RoundIcon name={item.icon} /><View style={styles.menuText}><Text style={styles.menuTitle}>{item.title}</Text><Text style={styles.menuSubtitle}>{item.subtitle}</Text></View><IconSymbol name="chevron.left" size={18} color={COLORS.muted} /></TouchableOpacity>)}</Card></View>;
+}
 
-const styles = StyleSheet.create({ brandCard: { borderRadius: 26, padding: 19, flexDirection: "row-reverse", alignItems: "center", gap: 13, borderWidth: 1, borderColor: "rgba(255,255,255,0.28)", shadowColor: "#214967", shadowOpacity: 0.20, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 4 }, brandIcon: { width: 58, height: 58, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.16)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)", justifyContent: "center", alignItems: "center" }, brandText: { flex: 1, alignItems: "flex-end" }, brandName: { color: "#FFFFFF", fontSize: 20, fontWeight: "900" }, brandSubtitle: { color: "#D9F1F4", fontSize: 12, lineHeight: 18, marginTop: 4, textAlign: "right" }, sectionHeading: { color: COLORS.primary, fontSize: 12, fontWeight: "900", textAlign: "right", marginTop: 25, marginBottom: 9 }, menu: { paddingHorizontal: 15, paddingVertical: 0, borderRadius: 24 }, menuItem: { flexDirection: "row-reverse", alignItems: "center", gap: 12, paddingVertical: 16 }, menuBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(114,131,139,0.20)" }, menuText: { flex: 1, alignItems: "flex-end" }, menuTitle: { color: COLORS.ink, fontSize: 14, fontWeight: "800", textAlign: "right" }, menuSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 4, textAlign: "right" }, version: { color: COLORS.muted, fontSize: 11, textAlign: "center", marginTop: 25 } });
+const styles = StyleSheet.create({
+  identity: { backgroundColor: COLORS.deep, borderRadius: 19, padding: 16, flexDirection: "row-reverse", alignItems: "center", gap: 11 },
+  identityIcon: { width: 46, height: 46, borderRadius: 13, backgroundColor: "#24574F", alignItems: "center", justifyContent: "center" },
+  identityText: { flex: 1, alignItems: "flex-end" },
+  identityTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "900" },
+  identitySubtitle: { color: "#BDE5D4", fontSize: 10, marginTop: 4, textAlign: "right" },
+  localPill: { borderRadius: 8, borderWidth: 1, borderColor: "#477A6D", paddingHorizontal: 7, paddingVertical: 4 },
+  localPillText: { color: "#D6F2E7", fontSize: 9, fontWeight: "900" },
+  sectionHeading: { color: COLORS.ink, fontSize: 13, fontWeight: "900", textAlign: "right", marginTop: 26, marginBottom: 9 },
+  menu: { paddingHorizontal: 14, paddingVertical: 0 },
+  menuItem: { flexDirection: "row-reverse", alignItems: "center", gap: 11, paddingVertical: 14 },
+  menuBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  menuText: { flex: 1, alignItems: "flex-end" },
+  menuTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "900", textAlign: "right" },
+  menuSubtitle: { color: COLORS.muted, fontSize: 10, marginTop: 3, textAlign: "right" },
+  version: { color: COLORS.muted, fontSize: 10, textAlign: "center", marginTop: 24 },
+});
