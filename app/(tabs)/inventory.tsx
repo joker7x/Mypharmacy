@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { memo, useCallback, useDeferredValue, useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { Badge, COLORS, PageHeader, RoundIcon } from "@/components/app-ui";
@@ -8,28 +8,31 @@ import { formatCurrency, formatShortDate, isExpirySoon, Medication, usePharmacy 
 import { ScreenContainer } from "@/components/screen-container";
 
 type Filter = "الكل" | "مخزون منخفض" | "صلاحية قريبة";
+const filterOptions: Filter[] = ["الكل", "مخزون منخفض", "صلاحية قريبة"];
 
 export default function InventoryScreen() {
   const { medications } = usePharmacy();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("الكل");
-  const lowCount = medications.filter((item) => item.quantity <= item.reorderLevel).length;
+  const deferredSearch = useDeferredValue(search.trim());
+  const lowCount = useMemo(() => medications.filter((item) => item.quantity <= item.reorderLevel).length, [medications]);
   const visibleItems = useMemo(() => medications.filter((medication) => {
-    const query = search.trim().toLowerCase();
+    const query = deferredSearch.toLowerCase();
     const matchesSearch = !query || [medication.name, medication.category, medication.sku, medication.barcode ?? ""].some((value) => value.toLowerCase().includes(query));
     const matchesFilter = filter === "الكل" || (filter === "مخزون منخفض" && medication.quantity <= medication.reorderLevel) || (filter === "صلاحية قريبة" && isExpirySoon(medication.expiryDate));
     return matchesSearch && matchesFilter;
-  }), [filter, medications, search]);
+  }), [deferredSearch, filter, medications]);
+  const renderItem = useCallback(({ item }: { item: Medication }) => <InventoryItem item={item} />, []);
 
-  const renderItem = ({ item }: { item: Medication }) => {
-    const lowStock = item.quantity <= item.reorderLevel;
-    const packages = Math.ceil(item.quantity / Math.max(1, item.unitsPerPackage ?? 1));
-    const expirySoon = isExpirySoon(item.expiryDate);
-    return <TouchableOpacity onPress={() => router.push({ pathname: "/medicine-form", params: { id: item.id } })} style={[styles.item, lowStock ? styles.itemLow : expirySoon ? styles.itemExpiry : styles.itemAvailable]} activeOpacity={0.75}><RoundIcon name="cross.case.fill" color={lowStock ? COLORS.warning : COLORS.primary} background={lowStock ? COLORS.softWarning : COLORS.mint} /><View style={styles.itemBody}><View style={styles.itemTop}><Text style={styles.itemName} numberOfLines={1}>{item.name}</Text><Text style={styles.price}>{formatCurrency(item.price)}</Text></View><View style={styles.itemMeta}><Text style={styles.itemCategory} numberOfLines={1}>{item.category} · {item.sku}</Text><Text style={[styles.quantity, lowStock && { color: COLORS.danger }]}>{item.quantity} وحدة · {packages} عبوة</Text></View><View style={styles.badges}>{lowStock ? <Badge label="مخزون منخفض" tone={item.quantity <= Math.max(2, Math.floor(item.reorderLevel / 2)) ? "danger" : "warning"} /> : <Badge label="متوفر" tone="success" />}{expirySoon ? <Badge label={`ينتهي ${formatShortDate(item.expiryDate)}`} tone="warning" /> : null}</View></View><IconSymbol name="chevron.left" size={18} color={COLORS.muted} /></TouchableOpacity>;
-  };
-
-  return <ScreenContainer className="flex-1"><FlatList data={visibleItems} keyExtractor={(item) => item.id} renderItem={renderItem} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" initialNumToRender={10} maxToRenderPerBatch={8} updateCellsBatchingPeriod={24} windowSize={7} contentContainerStyle={styles.listContent} ItemSeparatorComponent={() => <View style={styles.separator} />} ListHeaderComponent={<View><PageHeader title="المخزون" subtitle={`${medications.length.toLocaleString("ar-EG")} أصناف · ${lowCount.toLocaleString("ar-EG")} تحتاج متابعة`} action="إضافة صنف" onActionPress={() => router.push("/medicine-form")} /><TouchableOpacity onPress={() => router.push("/catalog")} style={styles.catalogLink} activeOpacity={0.75}><View style={styles.catalogIcon}><IconSymbol name="books.vertical.fill" size={20} color={COLORS.primary} /></View><View style={styles.catalogLinkText}><Text style={styles.catalogLinkTitle}>دليل الأصناف والأسعار</Text><Text style={styles.catalogLinkSubtitle}>الوصول إلى قاعدة الأدوية الكاملة وتفاصيل العبوة</Text></View><IconSymbol name="chevron.left" size={18} color={COLORS.muted} /></TouchableOpacity><View style={styles.searchBox}><IconSymbol name="magnifyingglass" size={19} color={COLORS.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="ابحث باسم الدواء أو الكود أو الباركود" placeholderTextColor="#8B9792" style={styles.searchInput} returnKeyType="done" /></View><View style={styles.filters}>{(["الكل", "مخزون منخفض", "صلاحية قريبة"] as Filter[]).map((option) => <TouchableOpacity key={option} onPress={() => setFilter(option)} style={[styles.filter, filter === option && styles.filterActive]} activeOpacity={0.75}><Text style={[styles.filterText, filter === option && styles.filterTextActive]}>{option}</Text></TouchableOpacity>)}</View><Text style={styles.countText}>عرض {visibleItems.length.toLocaleString("ar-EG")} من {medications.length.toLocaleString("ar-EG")} أصناف</Text></View>} ListEmptyComponent={<View style={styles.empty}><RoundIcon name="magnifyingglass" color={COLORS.muted} background={COLORS.mint} /><Text style={styles.emptyTitle}>لا توجد نتائج مطابقة</Text><Text style={styles.emptyDescription}>غيّر عبارة البحث أو الفلتر لعرض أصناف أخرى.</Text></View>} /></ScreenContainer>;
+  return <ScreenContainer className="flex-1"><FlatList data={visibleItems} keyExtractor={(item) => item.id} renderItem={renderItem} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" initialNumToRender={8} maxToRenderPerBatch={6} updateCellsBatchingPeriod={16} windowSize={5} removeClippedSubviews contentContainerStyle={styles.listContent} ItemSeparatorComponent={() => <View style={styles.separator} />} ListHeaderComponent={<View><PageHeader title="المخزون" subtitle={`${medications.length.toLocaleString("ar-EG")} أصناف · ${lowCount.toLocaleString("ar-EG")} تحتاج متابعة`} action="إضافة صنف" onActionPress={() => router.push("/medicine-form")} /><TouchableOpacity onPress={() => router.push("/catalog")} style={styles.catalogLink} activeOpacity={0.75}><View style={styles.catalogIcon}><IconSymbol name="books.vertical.fill" size={20} color={COLORS.primary} /></View><View style={styles.catalogLinkText}><Text style={styles.catalogLinkTitle}>دليل الأصناف والأسعار</Text><Text style={styles.catalogLinkSubtitle}>الوصول إلى قاعدة الأدوية الكاملة وتفاصيل العبوة</Text></View><IconSymbol name="chevron.left" size={18} color={COLORS.muted} /></TouchableOpacity><View style={styles.searchBox}><IconSymbol name="magnifyingglass" size={19} color={COLORS.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="ابحث باسم الدواء أو الكود أو الباركود" placeholderTextColor="#8B9792" style={styles.searchInput} returnKeyType="done" /></View><View style={styles.filters}>{filterOptions.map((option) => <TouchableOpacity key={option} onPress={() => setFilter(option)} style={[styles.filter, filter === option && styles.filterActive]} activeOpacity={0.75}><Text style={[styles.filterText, filter === option && styles.filterTextActive]}>{option}</Text></TouchableOpacity>)}</View><Text style={styles.countText}>عرض {visibleItems.length.toLocaleString("ar-EG")} من {medications.length.toLocaleString("ar-EG")} أصناف</Text></View>} ListEmptyComponent={<View style={styles.empty}><RoundIcon name="magnifyingglass" color={COLORS.muted} background={COLORS.mint} /><Text style={styles.emptyTitle}>لا توجد نتائج مطابقة</Text><Text style={styles.emptyDescription}>غيّر عبارة البحث أو الفلتر لعرض أصناف أخرى.</Text></View>} /></ScreenContainer>;
 }
+
+const InventoryItem = memo(function InventoryItem({ item }: { item: Medication }) {
+  const lowStock = item.quantity <= item.reorderLevel;
+  const packages = Math.ceil(item.quantity / Math.max(1, item.unitsPerPackage ?? 1));
+  const expirySoon = isExpirySoon(item.expiryDate);
+  return <TouchableOpacity onPress={() => router.push({ pathname: "/medicine-form", params: { id: item.id } })} style={[styles.item, lowStock ? styles.itemLow : expirySoon ? styles.itemExpiry : styles.itemAvailable]} activeOpacity={0.75}><RoundIcon name="cross.case.fill" color={lowStock ? COLORS.warning : COLORS.primary} background={lowStock ? COLORS.softWarning : COLORS.mint} /><View style={styles.itemBody}><View style={styles.itemTop}><Text style={styles.itemName} numberOfLines={1}>{item.name}</Text><Text style={styles.price}>{formatCurrency(item.price)}</Text></View><View style={styles.itemMeta}><Text style={styles.itemCategory} numberOfLines={1}>{item.category} · {item.sku}</Text><Text style={[styles.quantity, lowStock && { color: COLORS.danger }]}>{item.quantity} وحدة · {packages} عبوة</Text></View><View style={styles.badges}>{lowStock ? <Badge label="مخزون منخفض" tone={item.quantity <= Math.max(2, Math.floor(item.reorderLevel / 2)) ? "danger" : "warning"} /> : <Badge label="متوفر" tone="success" />}{expirySoon ? <Badge label={`ينتهي ${formatShortDate(item.expiryDate)}`} tone="warning" /> : null}</View></View><IconSymbol name="chevron.left" size={18} color={COLORS.muted} /></TouchableOpacity>;
+});
 
 const styles = StyleSheet.create({
   listContent: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 112 },
