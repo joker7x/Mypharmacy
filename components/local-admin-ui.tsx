@@ -25,17 +25,17 @@ export function StatTile({ label, value, accent = COLORS.primary }: { label: str
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 18, padding: 16, marginBottom: 14 },
+  card: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 26, padding: 18, marginBottom: 14 },
   fieldWrap: { marginBottom: 14 },
   label: { color: COLORS.ink, fontSize: 12, fontWeight: "900", textAlign: "right", marginBottom: 7 },
-  input: { minHeight: 50, borderRadius: 13, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.background, color: COLORS.ink, paddingHorizontal: 13, fontSize: 14, textAlign: "right", writingDirection: "rtl" },
-  button: { minHeight: 50, borderRadius: 14, backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center", paddingHorizontal: 16, marginTop: 3 },
-  buttonSecondary: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.primary },
+  input: { minHeight: 54, borderRadius: 21, borderWidth: 1, borderColor: "#F2F1EE", backgroundColor: "#F2F1EE", color: COLORS.ink, paddingHorizontal: 15, fontSize: 14, textAlign: "right", writingDirection: "rtl" },
+  button: { minHeight: 56, borderRadius: 20, backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center", paddingHorizontal: 16, marginTop: 3 },
+  buttonSecondary: { backgroundColor: "#F2F1EE", borderWidth: 1, borderColor: "#F2F1EE" },
   buttonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
-  buttonTextSecondary: { color: COLORS.primary },
+  buttonTextSecondary: { color: COLORS.ink },
   disabled: { opacity: 0.45 },
-  sectionHeading: { color: COLORS.ink, fontSize: 13, fontWeight: "900", textAlign: "right", marginTop: 25, marginBottom: 10 },
-  statTile: { flex: 1, minHeight: 80, borderRadius: 16, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
+  sectionHeading: { color: COLORS.ink, fontSize: 17, fontWeight: "900", textAlign: "right", marginTop: 29, marginBottom: 11 },
+  statTile: { flex: 1, minHeight: 96, borderRadius: 22, backgroundColor: "#FAF9F6", borderWidth: 1, borderColor: COLORS.border, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
   statValue: { fontSize: 19, fontWeight: "900" },
   statLabel: { color: COLORS.muted, fontSize: 10, fontWeight: "800", textAlign: "center", marginTop: 5 },
 });

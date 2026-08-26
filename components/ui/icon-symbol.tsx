@@ -23,6 +23,7 @@ const MAPPING = {
   "cross.case.fill": "medical-services",
   "magnifyingglass": "search",
   "plus.circle.fill": "add-circle",
+  "plus": "add",
   "chart.line.uptrend.xyaxis": "trending-up",
   "truck.box.fill": "local-shipping",
   "gearshape.fill": "settings",
