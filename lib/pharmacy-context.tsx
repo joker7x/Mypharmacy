@@ -23,7 +23,7 @@ export type Supplier = { id: string; name: string; company: string; phone: strin
 export type IncomingOrderItem = { medicationId?: string; catalogId?: string; name: string; quantity: number; unitCost: number; expiryDate?: string };
 export type IncomingOrder = { id: string; supplierName: string; sourceType: "شركة" | "مكتب" | "مورد آخر"; referenceNumber?: string; total?: number; notes?: string; invoiceUri?: string; receiptUri?: string; status?: "قيد الانتظار" | "تم الإرسال" | "تم الاستلام"; items?: IncomingOrderItem[]; receivedAt?: string; createdAt: string };
 export type Shift = { id: string; pharmacistName: string; openingCash: number; startedAt: string; closedAt?: string; actualCash?: number; difference?: number; note?: string };
-export type Expense = { id: string; title: string; amount: number; category: "توريد" | "تشغيل" | "أخرى"; createdAt: string; orderId?: string; paidAmount?: number };
+export type Expense = { id: string; title: string; amount: number; category: "توريد" | "تشغيل" | "أخرى"; createdAt: string; orderId?: string; paidAmount?: number; shiftId?: string };
 export type CustomerDebt = { id: string; customerName: string; phone?: string; total: number; paid: number; createdAt: string; note?: string };
 export type PharmacySettings = { imageRetentionDays: number };
 export type ReorderRecord = { medicationId: string; markedAt: string; quantityAtMark: number };
@@ -59,6 +59,7 @@ const dateFromToday = (days: number) => new Date(Date.now() + days * 86_400_000)
 const daysUntil = (date: string) => Math.ceil((new Date(date).getTime() - Date.now()) / 86_400_000);
 export const getUnitsPerPackage = (medication: Pick<Medication, "unitsPerPackage">) => Math.max(1, Math.trunc(medication.unitsPerPackage ?? 1));
 export const getUnitPrice = (medication: Pick<Medication, "price" | "unitsPerPackage">) => medication.price / getUnitsPerPackage(medication);
+export const calculateExpectedShiftCash = (openingCash: number, cashSales: number, shiftExpenses: number) => Math.max(0, openingCash + cashSales - shiftExpenses);
 
 const createDemoState = (): PharmacyState => ({
   medications: [
@@ -199,7 +200,7 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
       setState((current) => ({ ...current, shifts: [{ id: makeId("shift"), pharmacistName: pharmacistName.trim(), openingCash, startedAt: new Date().toISOString() }, ...current.shifts] }));
       return true;
     },
-    closeShift: (shiftId, actualCash, note) => setState((current) => { const shift = current.shifts.find((item) => item.id === shiftId); if (!shift) return current; const cashSalesTotal = current.sales.filter((sale) => sale.shiftId === shiftId && sale.paymentMethod === "نقدي").reduce((sum, sale) => sum + sale.total, 0); return { ...current, shifts: current.shifts.map((item) => item.id === shiftId ? { ...item, closedAt: new Date().toISOString(), actualCash, difference: actualCash - (shift.openingCash + cashSalesTotal), note } : item) }; }),
+    closeShift: (shiftId, actualCash, note) => setState((current) => { const shift = current.shifts.find((item) => item.id === shiftId); if (!shift) return current; const cashSalesTotal = current.sales.filter((sale) => sale.shiftId === shiftId && sale.paymentMethod === "نقدي").reduce((sum, sale) => sum + sale.total, 0); const shiftExpensesTotal = current.expenses.filter((expense) => expense.shiftId === shiftId).reduce((sum, expense) => sum + expense.amount, 0); return { ...current, shifts: current.shifts.map((item) => item.id === shiftId ? { ...item, closedAt: new Date().toISOString(), actualCash, difference: actualCash - calculateExpectedShiftCash(shift.openingCash, cashSalesTotal, shiftExpensesTotal), note } : item) }; }),
     addExpense: (expense) => setState((current) => ({ ...current, expenses: [{ ...expense, id: makeId("expense"), createdAt: new Date().toISOString() }, ...current.expenses] })),
     addDebt: (debt) => setState((current) => ({ ...current, debts: [{ ...debt, id: makeId("debt"), createdAt: new Date().toISOString() }, ...current.debts] })),
     settleDebt: (debtId, amount) => setState((current) => ({ ...current, debts: current.debts.map((debt) => debt.id === debtId ? { ...debt, paid: Math.min(debt.total, debt.paid + Math.max(0, amount)) } : debt) })),

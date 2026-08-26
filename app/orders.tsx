@@ -4,7 +4,7 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { Alert, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
-import { Badge, Card, COLORS, PageHeader, ReferenceTopBar, RoundIcon, SectionTitle, commonStyles } from "@/components/app-ui";
+import { Badge, Card, COLORS, PageHeader, RoundIcon, SectionTitle, commonStyles } from "@/components/app-ui";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { formatCurrency, formatShortDate, IncomingOrder, usePharmacy } from "@/lib/pharmacy-context";
 import { ScreenContainer } from "@/components/screen-container";
@@ -66,7 +66,7 @@ export default function OrdersScreen() {
     Alert.alert("تم حفظ الطلب", "أصبح الطلب وفاتورته متاحين للرجوع إليهما في أي وقت من هذا الجهاز.");
   };
 
-  return <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-background" className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}><ReferenceTopBar onAdd={() => setIsFormVisible(true)} />
+  return <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-background" className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}>
     <TouchableOpacity onPress={() => router.back()} style={styles.back} activeOpacity={0.75}><IconSymbol name="chevron.right" size={20} color={COLORS.ink} /><Text style={styles.backText}>رجوع</Text></TouchableOpacity>
     <PageHeader title="الطلبيات الواردة" subtitle="احتفظ بطلبات الموردين وصور الفواتير للرجوع إليها" action="إضافة طلب" onActionPress={() => setIsFormVisible(true)} />
     <Card style={styles.helperCard}><RoundIcon name="doc.text.fill" /><View style={styles.helperText}><Text style={styles.helperTitle}>كل طلب في مكانه</Text><Text style={styles.helperSubtitle}>أضف اسم الجهة، تفاصيل الطلب، وصورة الفاتورة من الكاميرا أو ألبوم الصور.</Text></View></Card>

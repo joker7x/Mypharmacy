@@ -1,11 +1,11 @@
 import { ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TextInputProps, TouchableOpacity, View } from "react-native";
 
-import { COLORS, PageHeader, ReferenceTopBar, commonStyles } from "@/components/app-ui";
+import { COLORS, PageHeader, commonStyles } from "@/components/app-ui";
 import { ScreenContainer } from "@/components/screen-container";
 
 export function AdminShell({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
-  return <ScreenContainer edges={["top", "bottom", "left", "right"]} className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content} keyboardShouldPersistTaps="handled"><ReferenceTopBar /><PageHeader title={title} subtitle={subtitle} />{children}</ScrollView></ScreenContainer>;
+  return <ScreenContainer edges={["top", "bottom", "left", "right"]} className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content} keyboardShouldPersistTaps="handled"><PageHeader title={title} subtitle={subtitle} />{children}</ScrollView></ScreenContainer>;
 }
 
 export function AdminCard({ children, style }: { children: ReactNode; style?: object }) {

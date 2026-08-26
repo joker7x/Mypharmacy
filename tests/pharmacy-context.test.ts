@@ -6,7 +6,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 vi.mock("expo-file-system", () => ({ File: class { delete() {} } }));
 vi.mock("expo-sqlite", () => ({ openDatabaseAsync: vi.fn() }));
 
-import { buildAlerts, buildReorderNeeds, calculateCashChange, calculateOrderTotal, type Medication, type ReorderRecord } from "../lib/pharmacy-context";
+import { buildAlerts, buildReorderNeeds, calculateCashChange, calculateExpectedShiftCash, calculateOrderTotal, type Medication, type ReorderRecord } from "../lib/pharmacy-context";
 
 const medication = (overrides: Partial<Medication> = {}): Medication => ({
   id: "med-1",
@@ -31,6 +31,11 @@ describe("حسابات الصيدلية", () => {
   it("يحسب باقي الدفع النقدي ولا يسمح بقيمة سالبة", () => {
     expect(calculateCashChange(145, 200)).toBe(55);
     expect(calculateCashChange(145, 100)).toBe(0);
+  });
+
+  it("يخصم مصروفات الشيفت من الرصيد المتوقع في الدرج", () => {
+    expect(calculateExpectedShiftCash(2000, 0, 1000)).toBe(1000);
+    expect(calculateExpectedShiftCash(2000, 500, 1000)).toBe(1500);
   });
 
   it("ينشئ تنبيهًا عالي الأولوية عندما يهبط المخزون إلى مستوى حرج", () => {
