@@ -8,6 +8,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { formatExpiryMonthYear, getExpiryBatches, getNearestExpiryDate, getUnitPrice, getUnitsPerPackage, isExpirySoon, Medication, usePharmacy } from "@/lib/pharmacy-context";
 import { printBarcodeLabel } from "@/lib/printer-service";
 import { ScreenContainer } from "@/components/screen-container";
+import { useStaffAudit } from "@/hooks/use-staff-audit";
 import { trpc } from "@/lib/trpc";
 
 type FormState = Omit<Medication, "id" | "quantity">;
@@ -17,6 +18,7 @@ const emptyForm: FormState = { catalogId: undefined, name: "", category: "", sku
 export default function MedicineFormScreen() {
   const { id, catalogId: initialCatalogId } = useLocalSearchParams<{ id?: string; catalogId?: string }>();
   const { medications, addMedication, updateMedication, deleteMedication, isReady, settings } = usePharmacy();
+  const audit = useStaffAudit();
   const idParam = Array.isArray(id) ? id[0] : id;
   const initialCatalogIdParam = Array.isArray(initialCatalogId) ? initialCatalogId[0] : initialCatalogId;
   const existing = typeof idParam === "string" ? medications.find((item) => item.id === idParam) : undefined;
@@ -51,7 +53,13 @@ export default function MedicineFormScreen() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(form.expiryDate)) return Alert.alert("تاريخ غير صحيح", "استخدم الصيغة YYYY-MM-DD مثل 2027-05-20.");
     if (!Number.isFinite(packages) || packages < 1) return Alert.alert("أدخل كمية المخزون", "أدخل عبوة واحدة على الأقل قبل إضافة الصنف إلى المخزون.");
     const medication = { ...form, quantity: Math.trunc(packages) * getUnitsPerPackage(form) };
-    if (existing) updateMedication(existing.id, medication); else addMedication(medication);
+    if (existing) {
+      updateMedication(existing.id, medication);
+      audit({ action: "inventory.quantity_updated", entityType: "medication", entityId: existing.id, detail: `تم تعديل كمية ${existing.name} إلى ${medication.quantity} وحدة.`, metadata: { quantity: medication.quantity } });
+    } else {
+      addMedication(medication);
+      audit({ action: "inventory.item_added", entityType: "medication", detail: `تمت إضافة ${medication.name} إلى المخزون.`, metadata: { catalogId: medication.catalogId, quantity: medication.quantity } });
+    }
     if (existing) router.back(); else router.replace("/(tabs)/inventory");
   };
 
@@ -63,6 +71,7 @@ export default function MedicineFormScreen() {
   const confirmRemove = () => {
     if (!existing) return;
     deleteMedication(existing.id);
+    audit({ action: "inventory.item_deleted", entityType: "medication", entityId: existing.id, detail: `تم حذف ${existing.name} من المخزون.` });
     setDeleteOpen(false);
     router.replace("/(tabs)/inventory");
   };

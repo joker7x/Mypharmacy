@@ -25,6 +25,60 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+export const staffProfiles = mysqlTable("staff_profiles", {
+  userId: int("userId").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  username: varchar("username", { length: 64 }).notNull().unique(),
+  passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
+  displayName: varchar("displayName", { length: 160 }).notNull(),
+  role: mysqlEnum("role", ["owner", "pharmacist", "cashier", "viewer"]).notNull().default("cashier"),
+  permissions: text("permissions").notNull(),
+  status: mysqlEnum("status", ["active", "frozen", "disabled"]).notNull().default("active"),
+  frozenUntil: timestamp("frozenUntil"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [index("staff_profiles_status_idx").on(table.status), index("staff_profiles_role_idx").on(table.role)]);
+
+export const staffSessions = mysqlTable("staff_sessions", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  deviceName: varchar("deviceName", { length: 255 }).notNull(),
+  devicePlatform: varchar("devicePlatform", { length: 64 }).notNull(),
+  appVersion: varchar("appVersion", { length: 64 }),
+  userAgent: varchar("userAgent", { length: 512 }),
+  networkAddress: varchar("networkAddress", { length: 96 }),
+  lastActiveAt: timestamp("lastActiveAt").defaultNow().notNull(),
+  signedOutAt: timestamp("signedOutAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [index("staff_sessions_user_idx").on(table.userId), index("staff_sessions_last_active_idx").on(table.lastActiveAt)]);
+
+export const staffAuditLogs = mysqlTable("staff_audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  actorUserId: int("actorUserId").references(() => users.id, { onDelete: "set null" }),
+  action: varchar("action", { length: 120 }).notNull(),
+  entityType: varchar("entityType", { length: 80 }).notNull(),
+  entityId: varchar("entityId", { length: 128 }),
+  detail: varchar("detail", { length: 500 }).notNull(),
+  metadata: text("metadata"),
+  deviceName: varchar("deviceName", { length: 255 }),
+  networkAddress: varchar("networkAddress", { length: 96 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [index("staff_audit_actor_idx").on(table.actorUserId), index("staff_audit_created_idx").on(table.createdAt)]);
+
+export const staffNotifications = mysqlTable("staff_notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  recipientUserId: int("recipientUserId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sentByUserId: int("sentByUserId").references(() => users.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 120 }).notNull(),
+  body: varchar("body", { length: 500 }).notNull(),
+  route: varchar("route", { length: 255 }),
+  readAt: timestamp("readAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [index("staff_notifications_recipient_idx").on(table.recipientUserId), index("staff_notifications_created_idx").on(table.createdAt)]);
+
+export type StaffProfile = typeof staffProfiles.$inferSelect;
+export type InsertStaffProfile = typeof staffProfiles.$inferInsert;
+
 export const productCatalog = mysqlTable("product_catalog", {
   externalId: varchar("externalId", { length: 64 }).primaryKey(),
   name: varchar("name", { length: 512 }).notNull(),

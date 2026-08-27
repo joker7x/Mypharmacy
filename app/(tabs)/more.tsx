@@ -4,27 +4,39 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-nati
 import { Card, COLORS, PageHeader, PharmacyMark, RoundIcon, commonStyles } from "@/components/app-ui";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { ScreenContainer } from "@/components/screen-container";
+import { useStaffSession } from "@/lib/staff-session";
+import type { StaffPermission } from "@/lib/staff-access";
+import { trpc } from "@/lib/trpc";
 
-type Destination = { title: string; subtitle: string; icon: Parameters<typeof RoundIcon>[0]["name"]; path: string };
+type Destination = { title: string; subtitle: string; icon: Parameters<typeof RoundIcon>[0]["name"]; path: string; permission?: StaffPermission };
 
 const operations: Destination[] = [
-  { title: "دليل الأدوية والأسعار", subtitle: "بحث بالاسم والباركود ومتابعة التغيرات", icon: "books.vertical.fill", path: "/catalog" },
-  { title: "الطلبيات والفواتير", subtitle: "تسجيل توريد الموردين وحفظ الفواتير", icon: "doc.text.fill", path: "/orders" },
-  { title: "الموردون", subtitle: "جهات التوريد وبيانات التواصل", icon: "truck.box.fill", path: "/suppliers" },
+  { title: "دليل الأدوية والأسعار", subtitle: "بحث بالاسم والباركود ومتابعة التغيرات", icon: "books.vertical.fill", path: "/catalog", permission: "inventory.view" },
+  { title: "الطلبيات والفواتير", subtitle: "تسجيل توريد الموردين وحفظ الفواتير", icon: "doc.text.fill", path: "/orders", permission: "orders.manage" },
+  { title: "الموردون", subtitle: "جهات التوريد وبيانات التواصل", icon: "truck.box.fill", path: "/suppliers", permission: "orders.manage" },
 ];
 const finance: Destination[] = [
-  { title: "الورديات", subtitle: "بدء وردية وإغلاقها بمطابقة نقدية", icon: "clock.fill", path: "/shifts" },
-  { title: "المصروفات", subtitle: "تشغيل وتوريد ومتابعة الإجمالي", icon: "arrow.down.circle.fill", path: "/expenses" },
-  { title: "حسابات العملاء", subtitle: "الآجل والمدفوع والمتبقي", icon: "person.crop.circle.fill", path: "/debts" },
+  { title: "الورديات", subtitle: "بدء وردية وإغلاقها بمطابقة نقدية", icon: "clock.fill", path: "/shifts", permission: "shifts.manage" },
+  { title: "المصروفات", subtitle: "تشغيل وتوريد ومتابعة الإجمالي", icon: "arrow.down.circle.fill", path: "/expenses", permission: "expenses.manage" },
+  { title: "حسابات العملاء", subtitle: "الآجل والمدفوع والمتبقي", icon: "person.crop.circle.fill", path: "/debts", permission: "sales.use" },
 ];
 const management: Destination[] = [
-  { title: "التقارير التشغيلية", subtitle: "المبيعات وحركة الأصناف", icon: "chart.line.uptrend.xyaxis", path: "/reports" },
-  { title: "الطابعة والملصقات", subtitle: "ربط Xprinter وضبط الإيصالات والباركود", icon: "printer.fill", path: "/settings" },
-  { title: "إعدادات الصيدلية", subtitle: "إدارة البيانات وإعدادات التطبيق", icon: "gearshape.fill", path: "/settings" },
+  { title: "التقارير التشغيلية", subtitle: "المبيعات وحركة الأصناف", icon: "chart.line.uptrend.xyaxis", path: "/reports", permission: "reports.view" },
+  { title: "الطابعة والملصقات", subtitle: "ربط Xprinter وضبط الإيصالات والباركود", icon: "printer.fill", path: "/settings", permission: "inventory.adjust" },
+  { title: "إعدادات الصيدلية", subtitle: "إدارة البيانات وإعدادات التطبيق", icon: "gearshape.fill", path: "/settings", permission: "staff.manage" },
 ];
 
 export default function MoreScreen() {
-  return <ScreenContainer className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}><PageHeader title="الإدارة" subtitle="أدوات الصيدلية مرتبة حسب المهمة، لا حسب التعقيد" /><View style={styles.identity}><PharmacyMark inverse size="small" /><View style={styles.identityText}><Text style={styles.identityTitle}>صيدليتي</Text><Text style={styles.identitySubtitle}>تشغيل محلي منظم، سريع، وقابل للمراجعة</Text></View><View style={styles.localPill}><Text style={styles.localPillText}>محلي</Text></View></View><Section heading="بيانات وتشغيل" items={operations} /><Section heading="الورديات والمال" items={finance} /><Section heading="متابعة وإدارة" items={management} /><Text style={styles.version}>تُحفظ بيانات التشغيل الأساسية على هذا الجهاز</Text></ScrollView></ScreenContainer>;
+  const { staff, can, logout } = useStaffSession();
+  const inbox = trpc.staff.notifications.useQuery(undefined, { retry: false, refetchInterval: 60_000 });
+  const unread = inbox.data?.filter((item) => !item.readAt).length ?? 0;
+  const managementItems = [
+    ...management,
+    { title: unread ? `الإشعارات · ${unread} جديد` : "الإشعارات", subtitle: "رسائل موجهة إليك من إدارة الصيدلية", icon: "bell.fill" as Parameters<typeof RoundIcon>[0]["name"], path: "/notifications" },
+    ...(can("staff.manage") ? [{ title: "أفراد الصيدلية", subtitle: "الحسابات والصلاحيات والجلسات وسجل النشاط", icon: "person.3.fill" as Parameters<typeof RoundIcon>[0]["name"], path: "/staff-admin" }] : []),
+  ];
+  const visible = (items: Destination[]) => items.filter((item) => !item.permission || can(item.permission));
+  return <ScreenContainer className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content}><PageHeader title="الإدارة" subtitle="أدوات الصيدلية مرتبة حسب المهمة، لا حسب التعقيد" /><View style={styles.identity}><PharmacyMark inverse size="small" /><View style={styles.identityText}><Text style={styles.identityTitle}>{staff?.displayName ?? "صيدليتي"}</Text><Text style={styles.identitySubtitle}>{staff ? `${staff.username} · ${staff.role}` : "تشغيل محلي منظم، سريع، وقابل للمراجعة"}</Text></View><View style={styles.localPill}><Text style={styles.localPillText}>محلي</Text></View></View>{visible(operations).length ? <Section heading="بيانات وتشغيل" items={visible(operations)} /> : null}{visible(finance).length ? <Section heading="الورديات والمال" items={visible(finance)} /> : null}<Section heading="متابعة وإدارة" items={visible(managementItems)} /><TouchableOpacity onPress={() => void logout()} style={styles.logout} activeOpacity={0.8}><IconSymbol name="rectangle.portrait.and.arrow.right" size={18} color={COLORS.danger} /><Text style={styles.logoutText}>تسجيل الخروج</Text></TouchableOpacity><Text style={styles.version}>تُحفظ بيانات التشغيل الأساسية على هذا الجهاز</Text></ScrollView></ScreenContainer>;
 }
 
 function Section({ heading, items }: { heading: string; items: Destination[] }) {
@@ -47,4 +59,6 @@ const styles = StyleSheet.create({
   menuTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "900", textAlign: "right" },
   menuSubtitle: { color: COLORS.muted, fontSize: 10, marginTop: 3, textAlign: "right" },
   version: { color: COLORS.muted, fontSize: 10, textAlign: "center", marginTop: 24 },
+  logout: { minHeight: 48, marginTop: 19, borderRadius: 15, flexDirection: "row-reverse", gap: 7, alignItems: "center", justifyContent: "center", backgroundColor: "#FFF1EE" },
+  logoutText: { color: COLORS.danger, fontSize: 12, fontWeight: "900" },
 });

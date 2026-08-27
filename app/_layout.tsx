@@ -11,6 +11,7 @@ import "@/lib/_core/nativewind-pressable";
 import { LatestPriceBackgroundSync } from "@/components/latest-price-background-sync";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { PharmacyProvider } from "@/lib/pharmacy-context";
+import { StaffSessionProvider, useStaffSession } from "@/lib/staff-session";
 import {
   SafeAreaFrameContext,
   SafeAreaInsetsContext,
@@ -87,15 +88,14 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
+          <StaffSessionProvider>
           <LatestPriceBackgroundSync />
           {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
           {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
           {/* in order for ios apps tab switching to work properly, use presentation: "fullScreenModal" for login page, whenever you decide to use presentation: "modal*/}
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="oauth/callback" />
-          </Stack>
+          <RootNavigator />
           <StatusBar style="auto" />
+          </StaffSessionProvider>
         </QueryClientProvider>
       </trpc.Provider>
     </GestureHandlerRootView>
@@ -126,4 +126,16 @@ export default function RootLayout() {
       </PharmacyProvider>
     </ThemeProvider>
   );
+}
+
+function RootNavigator() {
+  const { ready, staff } = useStaffSession();
+  if (!ready) return null;
+  return <Stack screenOptions={{ headerShown: false }}>
+    {staff ? <Stack.Screen name="(tabs)" /> : <Stack.Screen name="login" />}
+    <Stack.Screen name="login" options={{ presentation: "fullScreenModal" }} />
+    <Stack.Screen name="staff-admin" />
+    <Stack.Screen name="notifications" />
+    <Stack.Screen name="oauth/callback" />
+  </Stack>;
 }

@@ -3,10 +3,12 @@ import { Alert, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, Touchab
 
 import { AdminButton, AdminCard, AdminField, AdminShell, adminStyles } from "@/components/local-admin-ui";
 import { COLORS } from "@/components/app-ui";
+import { useStaffAudit } from "@/hooks/use-staff-audit";
 import { calculateExpectedShiftCash, formatCurrency, usePharmacy } from "@/lib/pharmacy-context";
 
 export default function ShiftsScreen() {
   const { shifts, sales, expenses, activeShift, startShift, closeShift } = usePharmacy();
+  const audit = useStaffAudit();
   const [pharmacistName, setPharmacistName] = useState("");
   const [openingCash, setOpeningCash] = useState("0");
   const [actualCash, setActualCash] = useState("");
@@ -33,6 +35,7 @@ export default function ShiftsScreen() {
   const handleStart = () => {
     const ok = startShift(pharmacistName, Number(openingCash) || 0);
     if (!ok) return Alert.alert("تعذر بدء الشيفت", "أدخل اسم الصيدلي وتأكد من عدم وجود شيفت مفتوح.");
+    audit({ action: "shift.started", entityType: "shift", detail: `تم بدء شيفت باسم ${pharmacistName.trim()}.`, metadata: { openingCash: Number(openingCash) || 0 } });
     setPharmacistName("");
     setOpeningCash("0");
   };
@@ -44,6 +47,7 @@ export default function ShiftsScreen() {
   const handleClose = () => {
     if (!activeShift || !hasActualCash) return Alert.alert("أدخل النقدية الفعلية", "أدخل قيمة النقدية الموجودة فعليًا في الدرج.");
     closeShift(activeShift.id, actualCashValue, note.trim() || undefined);
+    audit({ action: "shift.closed", entityType: "shift", entityId: activeShift.id, detail: `تم تقفيل شيفت ${activeShift.pharmacistName} بفرق ${difference?.toFixed(2) ?? "0.00"} ج.م.`, metadata: { expectedCash, actualCash: actualCashValue, difference } });
     setIsCloseSheetOpen(false);
     setActualCash("");
     setNote("");

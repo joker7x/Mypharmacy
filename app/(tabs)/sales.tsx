@@ -8,6 +8,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { CartItem, calculateCashChange, formatCurrency, getUnitPrice, usePharmacy } from "@/lib/pharmacy-context";
 import { printReceipt } from "@/lib/printer-service";
 import { ScreenContainer } from "@/components/screen-container";
+import { useStaffAudit } from "@/hooks/use-staff-audit";
 import { trpc } from "@/lib/trpc";
 
 type CatalogProduct = { externalId: string; arabicName: string; name: string; barcode: string | null; company: string | null; currentPrice: string | number; unitsPerPackage: number };
@@ -15,6 +16,7 @@ type PaymentMethod = "نقدي" | "بطاقة" | "محفظة";
 
 export default function SalesScreen() {
   const { medications, completeSale, settings } = usePharmacy();
+  const audit = useStaffAudit();
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("نقدي");
@@ -45,6 +47,7 @@ export default function SalesScreen() {
     if (!succeeded) return Alert.alert("تعذّر إتمام البيع", "تحقق من الوحدات المتاحة والمبلغ المدفوع ثم حاول مرة أخرى.");
     const paidChange = calculateCashChange(total, received ?? 0);
     const receipt = { receiptNumber: `S-${Date.now().toString().slice(-6)}`, createdAt: new Date().toISOString(), items: cart.map((item) => ({ name: item.name, quantity: item.quantity, unitPrice: item.unitPrice })), total, paymentMethod, cashReceived: received, change: paidChange };
+    audit({ action: "sale.completed", entityType: "sale", entityId: receipt.receiptNumber, detail: `تم تسجيل فاتورة بيع بقيمة ${total.toFixed(2)} ج.م.`, metadata: { paymentMethod, itemCount: cart.length, total } });
     setCart([]); setPaymentVisible(false); setCashReceived("");
     if (settings.printer.savedPrinter) {
       try { await printReceipt(settings.printer.savedPrinter, receipt); Alert.alert("تم تسجيل البيع وطباعة الإيصال", "تم حفظ الفاتورة وإرسال الإيصال للطابعة."); return; }
