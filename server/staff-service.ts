@@ -1,6 +1,6 @@
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import { and, desc, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
 
 import { staffAuditLogs, staffNotifications, staffProfiles, staffPushDeliveries, staffPushDevices, staffSessions, users } from "../drizzle/schema";
 import { chunkPushMessages, isExpoPushToken, type ExpoPushMessage } from "../lib/expo-push";
@@ -85,6 +85,25 @@ export function isProfileActive(profile: Pick<PublicStaffProfile, "status" | "fr
   return true;
 }
 
+/** Returns frozen accounts to active once their admin-selected expiry has passed. */
+export async function releaseExpiredFreezes(now = new Date()) {
+  const db = requireDb(await getDb());
+  const expired = await db.select({ userId: staffProfiles.userId, displayName: staffProfiles.displayName })
+    .from(staffProfiles)
+    .where(and(eq(staffProfiles.status, "frozen"), lte(staffProfiles.frozenUntil, now)));
+  if (!expired.length) return 0;
+  await db.update(staffProfiles).set({ status: "active", frozenUntil: null })
+    .where(and(eq(staffProfiles.status, "frozen"), lte(staffProfiles.frozenUntil, now)));
+  await Promise.all(expired.map((profile) => recordAudit({
+    action: "staff.auto_unfrozen",
+    entityType: "staff",
+    entityId: String(profile.userId),
+    detail: `أُعيد تفعيل حساب ${profile.displayName} تلقائيًا بعد انتهاء مدة التجميد.`,
+    metadata: { reason: "freeze_expired" },
+  })));
+  return expired.length;
+}
+
 export async function hasStaffConfigured() {
   const db = requireDb(await getDb());
   const result = await db.select({ userId: staffProfiles.userId }).from(staffProfiles).limit(1);
@@ -92,6 +111,7 @@ export async function hasStaffConfigured() {
 }
 
 export async function getProfileByUserId(userId: number) {
+  await releaseExpiredFreezes();
   const db = requireDb(await getDb());
   const rows = await db.select({ profile: staffProfiles, user: users }).from(staffProfiles).innerJoin(users, eq(staffProfiles.userId, users.id)).where(eq(staffProfiles.userId, userId)).limit(1);
   return rows[0] ? serializeProfile(rows[0].profile, rows[0].user) : null;
@@ -105,6 +125,7 @@ export async function getStaffIdentity(userId: number) {
 }
 
 export async function listProfiles() {
+  await releaseExpiredFreezes();
   const db = requireDb(await getDb());
   const rows = await db.select({ profile: staffProfiles, user: users }).from(staffProfiles).innerJoin(users, eq(staffProfiles.userId, users.id)).orderBy(desc(staffProfiles.createdAt));
   return rows.map((row) => serializeProfile(row.profile, row.user));
@@ -133,6 +154,7 @@ export async function bootstrapOwner(input: { username: string; password: string
 }
 
 export async function authenticateStaff(usernameInput: string, password: string) {
+  await releaseExpiredFreezes();
   const db = requireDb(await getDb());
   const username = cleanUsername(usernameInput);
   const rows = await db.select({ profile: staffProfiles, user: users }).from(staffProfiles).innerJoin(users, eq(staffProfiles.userId, users.id)).where(eq(staffProfiles.username, username)).limit(1);
@@ -162,7 +184,11 @@ export async function updateStaffProfile(input: { actorUserId: number; userId: n
   const updates: Partial<typeof staffProfiles.$inferInsert> = {};
   if (input.role) updates.role = input.role;
   if (input.permissions) updates.permissions = JSON.stringify(normalizePermissions(input.permissions));
-  if (input.status) { updates.status = input.status; updates.frozenUntil = input.status === "frozen" ? input.frozenUntil ?? null : null; }
+  if (input.status === "frozen") {
+    if (!input.frozenUntil || input.frozenUntil.getTime() <= Date.now()) throw new Error("اختر مدة تجميد مستقبلية للحساب.");
+    updates.status = "frozen";
+    updates.frozenUntil = input.frozenUntil;
+  } else if (input.status) { updates.status = input.status; updates.frozenUntil = null; }
   await db.update(staffProfiles).set(updates).where(eq(staffProfiles.userId, input.userId));
   const updated = await getProfileByUserId(input.userId);
   if (!updated) throw new Error("لم يتم العثور على حساب العامل.");
@@ -200,6 +226,7 @@ export async function listAudits(limit = 120) {
 }
 
 export async function createNotifications(input: { senderId: number; title: string; body: string; route?: string | null; target: { type: "all" | "role" | "user"; role?: StaffRole; userId?: number } }) {
+  await releaseExpiredFreezes();
   const db = requireDb(await getDb());
   let recipients: Array<{ userId: number }> = [];
   const activeFilter = and(eq(staffProfiles.status, "active"), or(isNull(staffProfiles.frozenUntil), gt(staffProfiles.frozenUntil, new Date())));
