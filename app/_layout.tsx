@@ -1,6 +1,6 @@
 import "@/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -130,9 +130,17 @@ export default function RootLayout() {
 
 function RootNavigator() {
   const { ready, staff } = useStaffSession();
+  const router = useRouter();
+  const segments = useSegments();
+  useEffect(() => {
+    if (!ready) return;
+    const isLoginRoute = segments[0] === "login";
+    if (!staff && !isLoginRoute) router.replace("/login");
+    if (staff && isLoginRoute) router.replace("/(tabs)");
+  }, [ready, router, segments, staff]);
   if (!ready) return null;
   return <Stack screenOptions={{ headerShown: false }}>
-    {staff ? <Stack.Screen name="(tabs)" /> : <Stack.Screen name="login" />}
+    <Stack.Screen name="(tabs)" />
     <Stack.Screen name="login" options={{ presentation: "fullScreenModal" }} />
     <Stack.Screen name="staff-admin" />
     <Stack.Screen name="notifications" />
