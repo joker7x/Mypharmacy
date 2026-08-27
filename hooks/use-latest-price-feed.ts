@@ -11,7 +11,9 @@ const HALF_HOUR_MS = 30 * 60 * 1000;
 export function useLatestPriceFeed(page: number, enabled: boolean) {
   const [cache, setCache] = useState<LatestPriceCache | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [fillOffset, setFillOffset] = useState<number | null>(null);
   const initialMergeRef = useRef(0);
+  const fillMergeRef = useRef(0);
   const headMergeRef = useRef(0);
 
   useEffect(() => {
@@ -20,14 +22,22 @@ export function useLatestPriceFeed(page: number, enabled: boolean) {
       if (!active) return;
       setCache(saved);
       setHydrated(true);
+      if (saved && saved.items.length < LATEST_PRICE_CACHE_LIMIT && saved.hasMore) setFillOffset(saved.nextOffset);
     });
     return () => { active = false; };
   }, []);
 
+  // أول 100 صنف فقط؛ تفتح الشاشة بمجرد وصول هذه الدفعة.
   const initialQuery = trpc.catalog.latestFeed.useQuery(
-    { offset: 0, pages: INITIAL_PAGE_COUNT },
+    { offset: 0, pages: 1 },
     { enabled: enabled && hydrated && !cache, staleTime: HALF_HOUR_MS, refetchOnMount: false },
   );
+  // الصفحات 2 إلى 10 تُملأ بالتتابع في الخلفية، فلا تحجب أول عرض.
+  const fillQuery = trpc.catalog.latestFeed.useQuery(
+    { offset: fillOffset ?? 0, pages: 1 },
+    { enabled: enabled && hydrated && fillOffset !== null, staleTime: HALF_HOUR_MS, refetchOnMount: false },
+  );
+  // فحص خفيف لأول 100 صنف كل 30 دقيقة ما دام التطبيق مفتوحًا.
   const headQuery = trpc.catalog.latestFeed.useQuery(
     { offset: 0, pages: 1 },
     {
@@ -55,7 +65,23 @@ export function useLatestPriceFeed(page: number, enabled: boolean) {
     };
     setCache(next);
     void saveLatestPriceCache(next);
+    if (next.items.length < LATEST_PRICE_CACHE_LIMIT && next.hasMore) setFillOffset(next.nextOffset);
   }, [initialQuery.data, initialQuery.dataUpdatedAt]);
+
+  useEffect(() => {
+    if (!cache || !fillQuery.data || fillQuery.dataUpdatedAt === fillMergeRef.current) return;
+    fillMergeRef.current = fillQuery.dataUpdatedAt;
+    const next: LatestPriceCache = {
+      ...cache,
+      items: mergeLatestPriceItems(cache.items, fillQuery.data.items as LatestPriceItem[]),
+      nextOffset: fillQuery.data.nextOffset,
+      hasMore: fillQuery.data.hasMore,
+      syncedAt: Date.now(),
+    };
+    setCache(next);
+    void saveLatestPriceCache(next);
+    setFillOffset(next.items.length < LATEST_PRICE_CACHE_LIMIT && next.hasMore ? next.nextOffset : null);
+  }, [cache, fillQuery.data, fillQuery.dataUpdatedAt]);
 
   useEffect(() => {
     if (!cache || !headQuery.data || headQuery.dataUpdatedAt === headMergeRef.current) return;
@@ -75,10 +101,11 @@ export function useLatestPriceFeed(page: number, enabled: boolean) {
   const pageItems = isCachedPage
     ? cachedItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
     : (overflowQuery.data?.items ?? []) as LatestPriceItem[];
+  const isFilling = fillOffset !== null || fillQuery.isFetching;
   const hasNext = isCachedPage && page < cachedPages - 1
     ? true
     : isCachedPage
-      ? Boolean(cache?.hasMore)
+      ? !isFilling && Boolean(cache?.hasMore)
       : Boolean(overflowQuery.data?.hasMore);
 
   const refresh = useCallback(async () => {
@@ -91,7 +118,8 @@ export function useLatestPriceFeed(page: number, enabled: boolean) {
     cacheCount: cachedItems.length,
     hasNext,
     isReady: hydrated,
-    isFetching: !hydrated || initialQuery.isFetching || headQuery.isFetching || overflowQuery.isFetching,
+    isFetching: !hydrated || initialQuery.isFetching || overflowQuery.isFetching,
+    isUpdatingInBackground: isFilling || headQuery.isFetching,
     refresh,
     lastSyncedAt: cache?.syncedAt ?? null,
   };
