@@ -1,11 +1,11 @@
 import { useDeferredValue, useEffect, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { COLORS, PageHeader, commonStyles } from "@/components/app-ui";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { getUnitPrice, getUnitsPerPackage, Medication, usePharmacy } from "@/lib/pharmacy-context";
+import { formatShortDate, getExpiryBatches, getUnitPrice, getUnitsPerPackage, isExpirySoon, Medication, usePharmacy } from "@/lib/pharmacy-context";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
 
@@ -23,6 +23,7 @@ export default function MedicineFormScreen() {
   const [packages, setPackages] = useState(existing ? Math.ceil(existing.quantity / getUnitsPerPackage(existing)) : 0);
   const [catalogSearch, setCatalogSearch] = useState(typeof initialCatalogIdParam === "string" ? initialCatalogIdParam : "");
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const deferredSearch = useDeferredValue(catalogSearch.trim());
   const catalogQuery = trpc.catalog.search.useQuery({ query: deferredSearch.length >= 2 ? deferredSearch : "xx", limit: 12, offset: 0 }, { enabled: !existing && !form.catalogId && deferredSearch.length >= 2, staleTime: 120_000 });
   const directProductQuery = trpc.catalog.product.useQuery({ externalId: typeof initialCatalogIdParam === "string" ? initialCatalogIdParam : "x" }, { enabled: Boolean(initialCatalogIdParam) && !existing });
@@ -54,12 +55,14 @@ export default function MedicineFormScreen() {
 
   const remove = () => {
     if (!existing) return Alert.alert("الصنف غير متاح", "لم يعد هذا الصنف موجودًا في المخزون.", [{ text: "العودة للمخزون", onPress: () => router.replace("/(tabs)/inventory") }]);
-    const medicationId = existing.id;
-    const medicationName = existing.name;
-    Alert.alert("حذف الصنف", `سيُحذف «${medicationName}» نهائيًا من المخزون.`, [
-      { text: "إلغاء", style: "cancel" },
-      { text: "حذف نهائي", style: "destructive", onPress: () => { deleteMedication(medicationId); router.replace("/(tabs)/inventory"); } },
-    ]);
+    setDeleteOpen(true);
+  };
+
+  const confirmRemove = () => {
+    if (!existing) return;
+    deleteMedication(existing.id);
+    setDeleteOpen(false);
+    router.replace("/(tabs)/inventory");
   };
 
   return (
@@ -112,6 +115,7 @@ export default function MedicineFormScreen() {
 
         <View style={styles.formCard}>
           {existing ? <ReadOnlyMedicationDetails form={form} /> : null}
+          {existing ? <ExpiryHistory medication={existing} /> : null}
           <Field label="كمية المخزون (عبوات)" value={String(packages)} onChangeText={(value) => setPackages(Number(value.replace(/[^0-9]/g, "")) || 0)} placeholder="0" keyboardType="number-pad" writingDirection="ltr" />
           {!existing ? <View style={styles.singleField}><Field label="تاريخ الصلاحية" value={form.expiryDate} onChangeText={(value) => setField("expiryDate", value)} placeholder="YYYY-MM-DD" writingDirection="ltr" /></View> : null}
           <View style={styles.unitSummary}>
@@ -126,12 +130,27 @@ export default function MedicineFormScreen() {
         {existing ? <TouchableOpacity onPress={remove} style={styles.deleteButton} activeOpacity={0.8}><IconSymbol name="trash" size={18} color={COLORS.danger} /><Text style={styles.deleteText}>حذف الصنف</Text></TouchableOpacity> : null}
       </ScrollView>
       <BarcodeScanner visible={scannerOpen} onClose={() => setScannerOpen(false)} onScanned={setCatalogSearch} />
+      <Modal transparent visible={deleteOpen} animationType="fade" onRequestClose={() => setDeleteOpen(false)}>
+        <View style={styles.deleteOverlay}>
+          <View style={styles.deleteSheet}>
+            <Text style={styles.deleteSheetTitle}>حذف الصنف نهائيًا؟</Text>
+            <Text style={styles.deleteSheetBody}>سيُحذف «{existing?.name}» من المخزون وسجل النواقص المرتبط به.</Text>
+            <TouchableOpacity onPress={confirmRemove} style={styles.confirmDeleteButton} activeOpacity={0.84}><Text style={styles.confirmDeleteText}>حذف الصنف</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setDeleteOpen(false)} style={styles.cancelDeleteButton} activeOpacity={0.75}><Text style={styles.cancelDeleteText}>إلغاء</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
 
 function ReadOnlyMedicationDetails({ form }: { form: FormState }) {
   return <View style={styles.readOnlyDetails}><Text style={styles.readOnlyName} numberOfLines={1}>{form.name}</Text><Text style={styles.readOnlyMeta}>{form.category} · {formatPrice(form.price)} · {getUnitsPerPackage(form)} وحدة/عبوة</Text><Text style={styles.readOnlyNote}>للتعديل على بيانات الدواء، حدّثها من دليل الأدوية المعتمد.</Text></View>;
+}
+
+function ExpiryHistory({ medication }: { medication: Medication }) {
+  const batches = getExpiryBatches(medication);
+  return <View style={styles.expiryHistory}><View style={styles.expiryHeadingRow}><Text style={styles.expiryCount}>{batches.length.toLocaleString("ar-EG")} دفعة</Text><Text style={styles.expiryHeading}>سجل تواريخ الصلاحية</Text></View>{batches.map((batch, index) => { const highlighted = index === 0; const urgent = isExpirySoon(batch.expiryDate); return <View key={batch.id} style={[styles.expiryBatch, highlighted && (urgent ? styles.expiryBatchUrgent : styles.expiryBatchNearest)]}><View style={styles.expiryBatchText}><Text style={[styles.expiryBatchDate, highlighted && (urgent ? styles.expiryBatchDateUrgent : styles.expiryBatchDateNearest)]}>{formatShortDate(batch.expiryDate)}</Text><Text style={styles.expiryBatchLabel}>{highlighted ? "الأقرب للصلاحية" : "دفعة لاحقة"}</Text></View><Text style={[styles.expiryBatchQuantity, highlighted && (urgent ? styles.expiryBatchQuantityUrgent : styles.expiryBatchQuantityNearest)]}>{batch.quantity.toLocaleString("ar-EG")} وحدة</Text></View>; })}</View>;
 }
 
 function Field({ label, value, onChangeText, placeholder, keyboardType, writingDirection = "rtl" }: { label: string; value: string; onChangeText: (value: string) => void; placeholder: string; keyboardType?: "default" | "decimal-pad" | "number-pad"; writingDirection?: "rtl" | "ltr" }) {
@@ -169,6 +188,21 @@ const styles = StyleSheet.create({
   readOnlyName: { width: "100%", color: COLORS.ink, fontSize: 14, fontWeight: "900", textAlign: "right" },
   readOnlyMeta: { width: "100%", color: COLORS.muted, fontSize: 10, marginTop: 4, textAlign: "right" },
   readOnlyNote: { width: "100%", color: COLORS.muted, fontSize: 9, marginTop: 7, textAlign: "right" },
+  expiryHistory: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border, paddingTop: 13, marginTop: 1, marginBottom: 14 },
+  expiryHeadingRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  expiryHeading: { color: COLORS.ink, fontSize: 12, fontWeight: "900" },
+  expiryCount: { color: COLORS.muted, fontSize: 10, fontWeight: "800" },
+  expiryBatch: { minHeight: 48, borderRadius: 12, backgroundColor: "#F7F7F5", marginTop: 6, paddingHorizontal: 11, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  expiryBatchNearest: { backgroundColor: "#ECF8F4", borderWidth: 1, borderColor: "#B9E2D5" },
+  expiryBatchUrgent: { backgroundColor: "#FFF1E9", borderWidth: 1, borderColor: "#FFD6BD" },
+  expiryBatchText: { alignItems: "flex-end" },
+  expiryBatchDate: { color: COLORS.ink, fontSize: 12, fontWeight: "900" },
+  expiryBatchDateNearest: { color: COLORS.primary },
+  expiryBatchDateUrgent: { color: COLORS.warning },
+  expiryBatchLabel: { color: COLORS.muted, fontSize: 9, fontWeight: "800", marginTop: 2 },
+  expiryBatchQuantity: { color: COLORS.muted, fontSize: 11, fontWeight: "900" },
+  expiryBatchQuantityNearest: { color: COLORS.primary },
+  expiryBatchQuantityUrgent: { color: COLORS.warning },
   twoColumns: { flexDirection: "row-reverse", gap: 10 },
   halfField: { flex: 1 },
   singleField: { width: "100%" },
@@ -177,4 +211,12 @@ const styles = StyleSheet.create({
   disabledSave: { opacity: 0.55 },
   deleteButton: { minHeight: 46, flexDirection: "row-reverse", gap: 7, alignItems: "center", justifyContent: "center", marginTop: 15 },
   deleteText: { color: COLORS.danger, fontSize: 13, fontWeight: "800" },
+  deleteOverlay: { flex: 1, backgroundColor: "rgba(11, 29, 24, 0.54)", justifyContent: "flex-end" },
+  deleteSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 27, borderTopRightRadius: 27, paddingHorizontal: 22, paddingTop: 23, paddingBottom: 30 },
+  deleteSheetTitle: { color: COLORS.ink, fontSize: 18, fontWeight: "900", textAlign: "right" },
+  deleteSheetBody: { color: COLORS.muted, fontSize: 12, lineHeight: 20, textAlign: "right", marginTop: 8, marginBottom: 18 },
+  confirmDeleteButton: { minHeight: 52, backgroundColor: COLORS.danger, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  confirmDeleteText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
+  cancelDeleteButton: { minHeight: 46, alignItems: "center", justifyContent: "center", marginTop: 5 },
+  cancelDeleteText: { color: COLORS.muted, fontSize: 13, fontWeight: "900" },
 });

@@ -6,7 +6,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 vi.mock("expo-file-system", () => ({ File: class { delete() {} } }));
 vi.mock("expo-sqlite", () => ({ openDatabaseAsync: vi.fn() }));
 
-import { calculateOrderTotal, getUnitPrice, getUnitsPerPackage, normalizePharmacyState, type CartItem, type IncomingOrder } from "./pharmacy-context";
+import { calculateOrderTotal, getExpiryBatches, getNearestExpiryDate, getUnitPrice, getUnitsPerPackage, normalizePharmacyState, type CartItem, type IncomingOrder } from "./pharmacy-context";
 
 describe("إدارة بيانات الطلبيات المحلية", () => {
   it("تضيف قائمة طلبيات فارغة للبيانات المحفوظة من الإصدارات السابقة", () => {
@@ -39,5 +39,11 @@ describe("إدارة بيانات الطلبيات المحلية", () => {
   it("يحسب سعر وحدة البيع من سعر العبوة وعدد وحداتها", () => {
     expect(getUnitsPerPackage({ unitsPerPackage: 2 })).toBe(2);
     expect(getUnitPrice({ price: 96, unitsPerPackage: 2 })).toBe(48);
+  });
+
+  it("يرتب سجل دفعات الصلاحية ويعتمد أقرب تاريخ للصنف", () => {
+    const medication = { expiryDate: "2027-10-01", quantity: 12, expiryBatches: [{ id: "later", expiryDate: "2027-10-01", quantity: 7, receivedAt: "2026-08-01" }, { id: "nearer", expiryDate: "2027-06-01", quantity: 5, receivedAt: "2026-08-02" }] };
+    expect(getExpiryBatches(medication).map((batch) => batch.expiryDate)).toEqual(["2027-06-01", "2027-10-01"]);
+    expect(getNearestExpiryDate(medication)).toBe("2027-06-01");
   });
 });

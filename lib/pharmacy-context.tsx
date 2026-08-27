@@ -3,6 +3,7 @@ import { ReactNode, createContext, useContext, useEffect, useMemo, useRef, useSt
 import { createLocalStorage, type LocalStorage } from "./local-storage";
 
 
+export type ExpiryBatch = { id: string; expiryDate: string; quantity: number; receivedAt: string };
 export type Medication = {
   id: string;
   catalogId?: string;
@@ -15,6 +16,7 @@ export type Medication = {
   unitsPerPackage?: number;
   reorderLevel: number;
   expiryDate: string;
+  expiryBatches?: ExpiryBatch[];
 };
 
 export type CartItem = { medicationId: string; name: string; unitPrice: number; quantity: number; unitLabel?: string };
@@ -62,6 +64,43 @@ export const getUnitsPerPackage = (medication: Pick<Medication, "unitsPerPackage
 export const getUnitPrice = (medication: Pick<Medication, "price" | "unitsPerPackage">) => medication.price / getUnitsPerPackage(medication);
 export const calculateExpectedShiftCash = (openingCash: number, cashSales: number, shiftExpenses: number) => Math.max(0, openingCash + cashSales - shiftExpenses);
 
+export const getExpiryBatches = (medication: Pick<Medication, "expiryDate" | "quantity" | "expiryBatches">): ExpiryBatch[] => {
+  const rawBatches = Array.isArray(medication.expiryBatches) && medication.expiryBatches.length
+    ? medication.expiryBatches
+    : [{ id: "legacy-batch", expiryDate: medication.expiryDate, quantity: medication.quantity, receivedAt: "" }];
+  return rawBatches
+    .filter((batch) => /^\d{4}-\d{2}-\d{2}$/.test(batch.expiryDate) && batch.quantity > 0)
+    .map((batch) => ({ ...batch, quantity: Math.max(0, Math.trunc(batch.quantity)) }))
+    .sort((left, right) => left.expiryDate.localeCompare(right.expiryDate));
+};
+
+export const getNearestExpiryDate = (medication: Pick<Medication, "expiryDate" | "quantity" | "expiryBatches">) => getExpiryBatches(medication)[0]?.expiryDate ?? medication.expiryDate;
+
+const withExpiryBatches = (medication: Omit<Medication, "id">): Omit<Medication, "id"> => {
+  const expiryBatches = getExpiryBatches(medication);
+  const expiryDate = expiryBatches[0]?.expiryDate ?? medication.expiryDate;
+  return { ...medication, expiryDate, expiryBatches };
+};
+
+const addToExpiryBatches = (medication: Medication, quantity: number, expiryDate: string) => {
+  const batches = getExpiryBatches(medication);
+  const existingIndex = batches.findIndex((batch) => batch.expiryDate === expiryDate);
+  const nextBatch: ExpiryBatch = { id: makeId("batch"), expiryDate, quantity: Math.max(0, Math.trunc(quantity)), receivedAt: new Date().toISOString() };
+  const nextBatches = existingIndex >= 0
+    ? batches.map((batch, index) => index === existingIndex ? { ...batch, quantity: batch.quantity + nextBatch.quantity } : batch)
+    : [...batches, nextBatch];
+  return getExpiryBatches({ ...medication, expiryBatches: nextBatches, quantity: medication.quantity + nextBatch.quantity });
+};
+
+const removeFromExpiryBatches = (medication: Medication, quantity: number) => {
+  let remaining = Math.max(0, Math.trunc(quantity));
+  return getExpiryBatches(medication).map((batch) => {
+    const removed = Math.min(batch.quantity, remaining);
+    remaining -= removed;
+    return { ...batch, quantity: batch.quantity - removed };
+  }).filter((batch) => batch.quantity > 0);
+};
+
 const createDemoState = (): PharmacyState => ({
   medications: [
     { id: "med-1", name: "بانادول إكسترا", category: "مسكنات", sku: "PAN-500", price: 72, quantity: 34, reorderLevel: 12, expiryDate: dateFromToday(210) },
@@ -92,7 +131,7 @@ const createDemoState = (): PharmacyState => ({
 export const normalizePharmacyState = (stored: Partial<PharmacyState>): PharmacyState => {
   const demo = createDemoState();
   return {
-    medications: Array.isArray(stored.medications) ? stored.medications.map((medication) => ({ ...medication, unitsPerPackage: getUnitsPerPackage(medication) })) : demo.medications,
+    medications: Array.isArray(stored.medications) ? stored.medications.map((medication) => ({ ...withExpiryBatches({ ...medication, unitsPerPackage: getUnitsPerPackage(medication) }), id: medication.id })) : demo.medications,
     sales: Array.isArray(stored.sales) ? stored.sales : demo.sales,
     suppliers: Array.isArray(stored.suppliers) ? stored.suppliers : demo.suppliers,
     incomingOrders: Array.isArray(stored.incomingOrders) ? stored.incomingOrders.map((order) => ({ status: "قيد الانتظار", ...order })) : [],
@@ -111,7 +150,8 @@ export const buildAlerts = (medications: Medication[]): PharmacyAlert[] => {
       const severity = medication.quantity <= Math.max(2, Math.floor(medication.reorderLevel / 2)) ? "high" : "medium";
       generated.push({ id: `stock-${medication.id}`, medicationId: medication.id, title: severity === "high" ? "مخزون حرج" : "مخزون منخفض", detail: `${medication.name} — المتاح ${medication.quantity} وحدة بيع فقط`, severity, kind: "stock" });
     }
-    const remainingDays = daysUntil(medication.expiryDate);
+    const expiryDate = getNearestExpiryDate(medication);
+    const remainingDays = daysUntil(expiryDate);
     if (remainingDays <= 60) generated.push({ id: `expiry-${medication.id}`, medicationId: medication.id, title: remainingDays < 0 ? "انتهت الصلاحية" : "صلاحية قريبة", detail: remainingDays < 0 ? `${medication.name} يحتاج إلى معالجة فورية` : `${medication.name} ينتهي خلال ${remainingDays} يومًا`, severity: remainingDays <= 20 ? "high" : "medium", kind: "expiry" });
   });
   return generated.sort((a, b) => (a.severity === "high" ? -1 : 1) - (b.severity === "high" ? -1 : 1));
@@ -178,11 +218,19 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
     isReady,
     alerts: buildAlerts(state.medications),
     reorderNeeds: buildReorderNeeds(state.medications, state.reorderRecords),
-    addMedication: (medication) => setState((current) => ({ ...current, medications: [{ ...medication, id: makeId("med") }, ...current.medications] })),
+    addMedication: (medication) => setState((current) => ({ ...current, medications: [{ ...withExpiryBatches(medication), id: makeId("med") }, ...current.medications] })),
     updateMedication: (id, medication) => setState((current) => {
       const previous = current.medications.find((item) => item.id === id);
       const isRestocked = Boolean(previous && medication.quantity > previous.quantity && medication.quantity > medication.reorderLevel);
-      return { ...current, medications: current.medications.map((item) => item.id === id ? { ...medication, id } : item), reorderRecords: isRestocked ? current.reorderRecords.filter((record) => record.medicationId !== id) : current.reorderRecords };
+      const expiryBatches = previous
+        ? medication.quantity > previous.quantity
+          ? addToExpiryBatches(previous, medication.quantity - previous.quantity, getNearestExpiryDate(previous))
+          : medication.quantity < previous.quantity
+            ? removeFromExpiryBatches(previous, previous.quantity - medication.quantity)
+            : getExpiryBatches(previous)
+        : [];
+      const expiryDate = expiryBatches[0]?.expiryDate ?? medication.expiryDate;
+      return { ...current, medications: current.medications.map((item) => item.id === id ? { ...withExpiryBatches({ ...medication, expiryDate, expiryBatches }), id } : item), reorderRecords: isRestocked ? current.reorderRecords.filter((record) => record.medicationId !== id) : current.reorderRecords };
     }),
     deleteMedication: (id) => setState((current) => ({ ...current, medications: current.medications.filter((item) => item.id !== id), reorderRecords: current.reorderRecords.filter((record) => record.medicationId !== id) })),
     completeSale: (items, paymentMethod, paymentDetails) => {
@@ -191,7 +239,7 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
       if (!activeShift || !items.length || items.some((item) => (state.medications.find((medication) => medication.id === item.medicationId)?.quantity ?? 0) < item.quantity)) return false;
       if (paymentMethod === "نقدي" && (paymentDetails?.cashReceived ?? 0) < total) return false;
       const sale: Sale = { id: makeId("sale"), createdAt: new Date().toISOString(), items, total, paymentMethod, shiftId: activeShift.id, cashReceived: paymentMethod === "نقدي" ? paymentDetails?.cashReceived : undefined, change: paymentMethod === "نقدي" ? paymentDetails?.change : undefined };
-      setState((current) => ({ ...current, medications: current.medications.map((medication) => { const saleItem = items.find((item) => item.medicationId === medication.id); return saleItem ? { ...medication, quantity: medication.quantity - saleItem.quantity } : medication; }), sales: [sale, ...current.sales] }));
+      setState((current) => ({ ...current, medications: current.medications.map((medication) => { const saleItem = items.find((item) => item.medicationId === medication.id); if (!saleItem) return medication; const expiryBatches = removeFromExpiryBatches(medication, saleItem.quantity); const expiryDate = expiryBatches[0]?.expiryDate ?? medication.expiryDate; return { ...medication, quantity: medication.quantity - saleItem.quantity, expiryDate, expiryBatches }; }), sales: [sale, ...current.sales] }));
       return true;
     },
     addSupplier: (supplier) => setState((current) => ({ ...current, suppliers: [{ ...supplier, id: makeId("supplier"), lastOrder: "لم يتم الطلب بعد" }, ...current.suppliers] })),
@@ -212,7 +260,7 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
       const order = state.incomingOrders.find((item) => item.id === orderId);
       if (!order || order.status === "تم الاستلام") return false;
       setState((current) => {
-        const medications = current.medications.map((medication) => { const line = items.find((item) => item.medicationId === medication.id); return line ? { ...medication, quantity: medication.quantity + line.quantity, price: line.unitCost * getUnitsPerPackage(medication) } : medication; });
+        const medications = current.medications.map((medication) => { const line = items.find((item) => item.medicationId === medication.id); if (!line) return medication; const expiryBatches = addToExpiryBatches(medication, line.quantity, line.expiryDate ?? medication.expiryDate); return { ...medication, quantity: medication.quantity + line.quantity, price: line.unitCost * getUnitsPerPackage(medication), expiryDate: expiryBatches[0]?.expiryDate ?? medication.expiryDate, expiryBatches }; });
         const total = items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
         const currentShift = current.shifts.find((shift) => !shift.closedAt);
         return { ...current, medications, incomingOrders: current.incomingOrders.map((item) => item.id === orderId ? { ...item, status: "تم الاستلام", items, total, receivedAt: new Date().toISOString(), ...attachments } : item), expenses: [{ id: makeId("expense"), title: `توريد ${order.supplierName}`, category: "توريد", amount: total, paidAmount: total, orderId, shiftId: currentShift?.id, createdAt: new Date().toISOString() }, ...current.expenses] };
