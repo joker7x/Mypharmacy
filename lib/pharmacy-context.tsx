@@ -184,7 +184,7 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
       const isRestocked = Boolean(previous && medication.quantity > previous.quantity && medication.quantity > medication.reorderLevel);
       return { ...current, medications: current.medications.map((item) => item.id === id ? { ...medication, id } : item), reorderRecords: isRestocked ? current.reorderRecords.filter((record) => record.medicationId !== id) : current.reorderRecords };
     }),
-    deleteMedication: (id) => setState((current) => ({ ...current, medications: current.medications.filter((item) => item.id !== id) })),
+    deleteMedication: (id) => setState((current) => ({ ...current, medications: current.medications.filter((item) => item.id !== id), reorderRecords: current.reorderRecords.filter((record) => record.medicationId !== id) })),
     completeSale: (items, paymentMethod, paymentDetails) => {
       const activeShift = state.shifts.find((shift) => !shift.closedAt);
       const total = calculateOrderTotal(items);

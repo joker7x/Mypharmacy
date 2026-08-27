@@ -53,8 +53,13 @@ export default function MedicineFormScreen() {
   };
 
   const remove = () => {
-    if (!existing) return;
-    Alert.alert("حذف الصنف", `هل تريد حذف «${existing.name}» من المخزون؟`, [{ text: "إلغاء", style: "cancel" }, { text: "حذف", style: "destructive", onPress: () => { deleteMedication(existing.id); router.back(); } }]);
+    if (!existing) return Alert.alert("الصنف غير متاح", "لم يعد هذا الصنف موجودًا في المخزون.", [{ text: "العودة للمخزون", onPress: () => router.replace("/(tabs)/inventory") }]);
+    const medicationId = existing.id;
+    const medicationName = existing.name;
+    Alert.alert("حذف الصنف", `سيُحذف «${medicationName}» نهائيًا من المخزون.`, [
+      { text: "إلغاء", style: "cancel" },
+      { text: "حذف نهائي", style: "destructive", onPress: () => { deleteMedication(medicationId); router.replace("/(tabs)/inventory"); } },
+    ]);
   };
 
   return (
@@ -64,7 +69,7 @@ export default function MedicineFormScreen() {
           <IconSymbol name="chevron.right" size={20} color={COLORS.ink} />
           <Text style={styles.backText}>رجوع</Text>
         </TouchableOpacity>
-        <PageHeader title={existing ? "تعديل صنف" : "إضافة للمخزون"} subtitle={existing ? "يمكنك تحديث بيانات الصنف المسجل" : isLockedCatalogAddition ? "بيانات الدواء مؤكدة من الدليل" : "اختر الدواء من دليل الأدوية أولًا"} />
+        <PageHeader title={existing ? "تعديل كمية المخزون" : "إضافة للمخزون"} subtitle={existing ? "بيانات الدواء للقراءة فقط؛ عدّل الكمية المتاحة" : isLockedCatalogAddition ? "بيانات الدواء مؤكدة من الدليل" : "اختر الدواء من دليل الأدوية أولًا"} />
 
         {!existing && !isLockedCatalogAddition ? (
           <View style={styles.catalogCard}>
@@ -106,19 +111,9 @@ export default function MedicineFormScreen() {
         ) : null}
 
         <View style={styles.formCard}>
-          {existing ? <EditableMedicationFields form={form} setField={setField} /> : null}
-          <View style={styles.twoColumns}>
-            <View style={styles.halfField}>
-              <Field label="كمية المخزون (عبوات)" value={String(packages)} onChangeText={(value) => setPackages(Number(value.replace(/[^0-9]/g, "")) || 0)} placeholder="0" keyboardType="number-pad" writingDirection="ltr" />
-            </View>
-            {existing ? <View style={styles.halfField}><Field label="وحدات البيع بالعبوة" value={String(getUnitsPerPackage(form))} onChangeText={(value) => setField("unitsPerPackage", Math.max(1, Number(value.replace(/[^0-9]/g, "")) || 1))} placeholder="1" keyboardType="number-pad" writingDirection="ltr" /></View> : null}
-          </View>
-          <View style={isLockedCatalogAddition ? styles.singleField : styles.twoColumns}>
-            <View style={isLockedCatalogAddition ? undefined : styles.halfField}>
-              <Field label="تاريخ الصلاحية" value={form.expiryDate} onChangeText={(value) => setField("expiryDate", value)} placeholder="YYYY-MM-DD" writingDirection="ltr" />
-            </View>
-            {existing ? <View style={styles.halfField}><Field label="حد إعادة الطلب (وحدة)" value={String(form.reorderLevel || "")} onChangeText={(value) => setField("reorderLevel", Number(value.replace(/[^0-9]/g, "")) || 0)} placeholder="5" keyboardType="number-pad" writingDirection="ltr" /></View> : null}
-          </View>
+          {existing ? <ReadOnlyMedicationDetails form={form} /> : null}
+          <Field label="كمية المخزون (عبوات)" value={String(packages)} onChangeText={(value) => setPackages(Number(value.replace(/[^0-9]/g, "")) || 0)} placeholder="0" keyboardType="number-pad" writingDirection="ltr" />
+          {!existing ? <View style={styles.singleField}><Field label="تاريخ الصلاحية" value={form.expiryDate} onChangeText={(value) => setField("expiryDate", value)} placeholder="YYYY-MM-DD" writingDirection="ltr" /></View> : null}
           <View style={styles.unitSummary}>
             <Text style={styles.unitSummaryText}>{sellableUnits.toLocaleString("ar-EG")} وحدة متاحة · سعر الوحدة {pricePerUnit.toLocaleString("ar-EG", { maximumFractionDigits: 2 })} ج.م</Text>
           </View>
@@ -126,7 +121,7 @@ export default function MedicineFormScreen() {
 
         <TouchableOpacity onPress={save} style={[commonStyles.primaryButton, !isReady && styles.disabledSave]} activeOpacity={0.85} disabled={!isReady}>
           <IconSymbol name="checkmark.circle.fill" size={20} color="#FFFFFF" />
-          <Text style={commonStyles.primaryButtonText}>{!isReady ? "جارٍ تجهيز المخزون..." : existing ? "حفظ التعديلات" : "إضافة إلى المخزون"}</Text>
+          <Text style={commonStyles.primaryButtonText}>{!isReady ? "جارٍ تجهيز المخزون..." : existing ? "حفظ الكمية" : "إضافة إلى المخزون"}</Text>
         </TouchableOpacity>
         {existing ? <TouchableOpacity onPress={remove} style={styles.deleteButton} activeOpacity={0.8}><IconSymbol name="trash" size={18} color={COLORS.danger} /><Text style={styles.deleteText}>حذف الصنف</Text></TouchableOpacity> : null}
       </ScrollView>
@@ -135,8 +130,8 @@ export default function MedicineFormScreen() {
   );
 }
 
-function EditableMedicationFields({ form, setField }: { form: FormState; setField: <K extends keyof FormState>(field: K, value: FormState[K]) => void }) {
-  return <><Field label="اسم الدواء" value={form.name} onChangeText={(value) => setField("name", value)} placeholder="مثال: بانادول إكسترا" /><Field label="الفئة" value={form.category} onChangeText={(value) => setField("category", value)} placeholder="مثال: مسكنات" /><View style={styles.twoColumns}><View style={styles.halfField}><Field label="الباركود / كود الصنف" value={form.barcode || form.sku} onChangeText={(value) => { setField("barcode", value); setField("sku", value); }} placeholder="امسح أو أدخل الباركود" writingDirection="ltr" /></View><View style={styles.halfField}><Field label="سعر العبوة" value={String(form.price || "")} onChangeText={(value) => setField("price", Number(value.replace(/[^0-9.]/g, "")) || 0)} placeholder="0" keyboardType="decimal-pad" writingDirection="ltr" /></View></View></>;
+function ReadOnlyMedicationDetails({ form }: { form: FormState }) {
+  return <View style={styles.readOnlyDetails}><Text style={styles.readOnlyName} numberOfLines={1}>{form.name}</Text><Text style={styles.readOnlyMeta}>{form.category} · {formatPrice(form.price)} · {getUnitsPerPackage(form)} وحدة/عبوة</Text><Text style={styles.readOnlyNote}>للتعديل على بيانات الدواء، حدّثها من دليل الأدوية المعتمد.</Text></View>;
 }
 
 function Field({ label, value, onChangeText, placeholder, keyboardType, writingDirection = "rtl" }: { label: string; value: string; onChangeText: (value: string) => void; placeholder: string; keyboardType?: "default" | "decimal-pad" | "number-pad"; writingDirection?: "rtl" | "ltr" }) {
@@ -170,6 +165,10 @@ const styles = StyleSheet.create({
   lockedMeta: { width: "100%", color: COLORS.muted, fontSize: 10, marginTop: 3, textAlign: "right" },
   lockedNote: { width: "100%", color: COLORS.primary, fontSize: 10, fontWeight: "800", marginTop: 5, textAlign: "right" },
   formCard: { backgroundColor: COLORS.surface, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, padding: 16, marginBottom: 18 },
+  readOnlyDetails: { backgroundColor: "#F7F7F5", borderRadius: 13, padding: 12, marginBottom: 14, alignItems: "flex-end" },
+  readOnlyName: { width: "100%", color: COLORS.ink, fontSize: 14, fontWeight: "900", textAlign: "right" },
+  readOnlyMeta: { width: "100%", color: COLORS.muted, fontSize: 10, marginTop: 4, textAlign: "right" },
+  readOnlyNote: { width: "100%", color: COLORS.muted, fontSize: 9, marginTop: 7, textAlign: "right" },
   twoColumns: { flexDirection: "row-reverse", gap: 10 },
   halfField: { flex: 1 },
   singleField: { width: "100%" },
