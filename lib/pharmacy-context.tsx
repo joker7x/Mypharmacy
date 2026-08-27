@@ -202,7 +202,10 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
       return true;
     },
     closeShift: (shiftId, actualCash, note) => setState((current) => { const shift = current.shifts.find((item) => item.id === shiftId); if (!shift) return current; const cashSalesTotal = current.sales.filter((sale) => sale.shiftId === shiftId && sale.paymentMethod === "نقدي").reduce((sum, sale) => sum + sale.total, 0); const shiftExpensesTotal = current.expenses.filter((expense) => expense.shiftId === shiftId).reduce((sum, expense) => sum + expense.amount, 0); return { ...current, shifts: current.shifts.map((item) => item.id === shiftId ? { ...item, closedAt: new Date().toISOString(), actualCash, difference: actualCash - calculateExpectedShiftCash(shift.openingCash, cashSalesTotal, shiftExpensesTotal), note } : item) }; }),
-    addExpense: (expense) => setState((current) => ({ ...current, expenses: [{ ...expense, id: makeId("expense"), createdAt: new Date().toISOString() }, ...current.expenses] })),
+    addExpense: (expense) => setState((current) => {
+      const currentShift = current.shifts.find((shift) => !shift.closedAt);
+      return { ...current, expenses: [{ ...expense, shiftId: expense.shiftId ?? currentShift?.id, id: makeId("expense"), createdAt: new Date().toISOString() }, ...current.expenses] };
+    }),
     addDebt: (debt) => setState((current) => ({ ...current, debts: [{ ...debt, id: makeId("debt"), createdAt: new Date().toISOString() }, ...current.debts] })),
     settleDebt: (debtId, amount) => setState((current) => ({ ...current, debts: current.debts.map((debt) => debt.id === debtId ? { ...debt, paid: Math.min(debt.total, debt.paid + Math.max(0, amount)) } : debt) })),
     receiveIncomingOrder: (orderId, items, attachments) => {
@@ -211,7 +214,8 @@ export function PharmacyProvider({ children }: { children: ReactNode }) {
       setState((current) => {
         const medications = current.medications.map((medication) => { const line = items.find((item) => item.medicationId === medication.id); return line ? { ...medication, quantity: medication.quantity + line.quantity, price: line.unitCost * getUnitsPerPackage(medication) } : medication; });
         const total = items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
-        return { ...current, medications, incomingOrders: current.incomingOrders.map((item) => item.id === orderId ? { ...item, status: "تم الاستلام", items, total, receivedAt: new Date().toISOString(), ...attachments } : item), expenses: [{ id: makeId("expense"), title: `توريد ${order.supplierName}`, category: "توريد", amount: total, paidAmount: total, orderId, createdAt: new Date().toISOString() }, ...current.expenses] };
+        const currentShift = current.shifts.find((shift) => !shift.closedAt);
+        return { ...current, medications, incomingOrders: current.incomingOrders.map((item) => item.id === orderId ? { ...item, status: "تم الاستلام", items, total, receivedAt: new Date().toISOString(), ...attachments } : item), expenses: [{ id: makeId("expense"), title: `توريد ${order.supplierName}`, category: "توريد", amount: total, paidAmount: total, orderId, shiftId: currentShift?.id, createdAt: new Date().toISOString() }, ...current.expenses] };
       });
       return true;
     },

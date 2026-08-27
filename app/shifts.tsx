@@ -1,27 +1,175 @@
 import { useMemo, useState } from "react";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { AdminButton, AdminCard, AdminField, AdminShell, adminStyles } from "@/components/local-admin-ui";
 import { COLORS } from "@/components/app-ui";
 import { calculateExpectedShiftCash, formatCurrency, usePharmacy } from "@/lib/pharmacy-context";
 
 export default function ShiftsScreen() {
-  const { shifts, sales, expenses, activeShift, startShift, closeShift, addExpense } = usePharmacy();
-  const [pharmacistName, setPharmacistName] = useState(""); const [openingCash, setOpeningCash] = useState("0"); const [actualCash, setActualCash] = useState(""); const [note, setNote] = useState(""); const [expenseTitle, setExpenseTitle] = useState(""); const [expenseAmount, setExpenseAmount] = useState(""); const [expenseCategory, setExpenseCategory] = useState<"توريد" | "تشغيل" | "أخرى">("توريد"); const [selectedShiftId, setSelectedShiftId] = useState<string>();
+  const { shifts, sales, expenses, activeShift, startShift, closeShift } = usePharmacy();
+  const [pharmacistName, setPharmacistName] = useState("");
+  const [openingCash, setOpeningCash] = useState("0");
+  const [actualCash, setActualCash] = useState("");
+  const [note, setNote] = useState("");
+  const [isCloseSheetOpen, setIsCloseSheetOpen] = useState(false);
+  const [selectedShiftId, setSelectedShiftId] = useState<string>();
+
   const shiftSales = useMemo(() => activeShift ? sales.filter((sale) => sale.shiftId === activeShift.id) : [], [activeShift, sales]);
   const shiftExpenses = useMemo(() => activeShift ? expenses.filter((expense) => expense.shiftId === activeShift.id) : [], [activeShift, expenses]);
-  const shiftRevenue = shiftSales.reduce((sum, sale) => sum + sale.total, 0);
   const cashSales = shiftSales.filter((sale) => sale.paymentMethod === "نقدي").reduce((sum, sale) => sum + sale.total, 0);
   const expenseTotal = shiftExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const expectedCash = activeShift ? calculateExpectedShiftCash(activeShift.openingCash, cashSales, expenseTotal) : 0; const selectedShift = shifts.find((shift) => shift.id === selectedShiftId); const selectedShiftSales = selectedShift ? sales.filter((sale) => sale.shiftId === selectedShift.id) : []; const selectedShiftExpenses = selectedShift ? expenses.filter((expense) => expense.shiftId === selectedShift.id) : []; const selectedCashSales = selectedShiftSales.filter((sale) => sale.paymentMethod === "نقدي").reduce((sum, sale) => sum + sale.total, 0); const selectedRevenue = selectedShiftSales.reduce((sum, sale) => sum + sale.total, 0); const selectedExpenseTotal = selectedShiftExpenses.reduce((sum, expense) => sum + expense.amount, 0); const selectedExpectedCash = selectedShift ? calculateExpectedShiftCash(selectedShift.openingCash, selectedCashSales, selectedExpenseTotal) : 0;
-  const handleStart = () => { const ok = startShift(pharmacistName, Number(openingCash) || 0); if (!ok) return Alert.alert("تعذر بدء الشيفت", "أدخل اسم الصيدلي وتأكد من عدم وجود شيفت مفتوح."); setPharmacistName(""); setOpeningCash("0"); Alert.alert("تم بدء الشيفت", "أصبحت المبيعات والمصروفات الجديدة مرتبطة بهذا الشيفت."); };
-  const handleExpense = () => { const value = Number(expenseAmount); if (!activeShift || !expenseTitle.trim() || !Number.isFinite(value) || value <= 0) return Alert.alert("بيانات المصروف ناقصة", "اكتب وصف المصروف وقيمته الصحيحة."); addExpense({ title: expenseTitle.trim(), amount: value, category: expenseCategory, paidAmount: value, shiftId: activeShift.id }); setExpenseTitle(""); setExpenseAmount(""); Alert.alert("تم تسجيل المصروف", `تم خصم ${formatCurrency(value)} من النقدية المتوقعة في الدرج.`); };
-  const handleClose = () => { const cash = Number(actualCash); if (!activeShift || Number.isNaN(cash) || cash < 0) return Alert.alert("بيانات غير مكتملة", "أدخل النقدية الفعلية عند إغلاق الشيفت."); const difference = cash - expectedCash; closeShift(activeShift.id, cash, note.trim() || undefined); setActualCash(""); setNote(""); Alert.alert("تقرير إغلاق الشيفت", `إجمالي الشيفت: ${formatCurrency(shiftRevenue)}\nمصروفات اليوم: ${formatCurrency(expenseTotal)}\nالمتوقع في الدرج: ${formatCurrency(expectedCash)}\nالفعلي في الدرج: ${formatCurrency(cash)}\nالفرق: ${formatCurrency(difference)}`); };
+  const expectedCash = activeShift ? calculateExpectedShiftCash(activeShift.openingCash, cashSales, expenseTotal) : 0;
+  const actualCashValue = Number(actualCash);
+  const hasActualCash = actualCash.trim().length > 0 && Number.isFinite(actualCashValue) && actualCashValue >= 0;
+  const difference = hasActualCash ? actualCashValue - expectedCash : null;
+  const closedShifts = useMemo(() => shifts.filter((shift) => Boolean(shift.closedAt)), [shifts]);
+  const selectedShift = closedShifts.find((shift) => shift.id === selectedShiftId);
+  const selectedShiftSales = useMemo(() => selectedShift ? sales.filter((sale) => sale.shiftId === selectedShift.id) : [], [sales, selectedShift]);
+  const selectedShiftExpenses = useMemo(() => selectedShift ? expenses.filter((expense) => expense.shiftId === selectedShift.id) : [], [expenses, selectedShift]);
+  const selectedCashSales = selectedShiftSales.filter((sale) => sale.paymentMethod === "نقدي").reduce((sum, sale) => sum + sale.total, 0);
+  const selectedExpenseTotal = selectedShiftExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const selectedExpectedCash = selectedShift ? calculateExpectedShiftCash(selectedShift.openingCash, selectedCashSales, selectedExpenseTotal) : 0;
 
-  return <AdminShell title="إدارة الشيفتات" subtitle="تابع حركة النقدية من بداية اليوم حتى الإغلاق">{activeShift ? <><AdminCard style={styles.currentCard}><View style={styles.cardHeading}><Text style={styles.cardTitle}>الشيفت الحالي</Text><View style={styles.openBadge}><View style={styles.openDot} /><Text style={styles.openText}>مفتوح</Text></View></View><View style={styles.hero}><View style={styles.heroTop}><Text style={styles.heroName}>{activeShift.pharmacistName}</Text><Text style={styles.heroTime}>بدأ {new Date(activeShift.startedAt).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</Text></View><Text style={styles.heroLabel}>المتوقع في الدرج الآن</Text><Text style={styles.heroValue}>{formatCurrency(expectedCash)}</Text><Text style={styles.heroFormula}>الافتتاحي + المبيعات النقدية − المصروفات</Text></View><View style={styles.summaryRow}><Summary label="إجمالي الشيفت" value={formatCurrency(shiftRevenue)} /><Summary label="المصروفات" value={formatCurrency(expenseTotal)} danger /><Summary label="نقدية المبيعات" value={formatCurrency(cashSales)} /></View><AdminButton title="تقفيل الشيفت وإظهار التقرير" onPress={handleClose} /></AdminCard><AdminCard><View style={styles.cardHeading}><Text style={styles.cardTitle}>مصروفات الشيفت</Text><Text style={styles.cardHint}>{shiftExpenses.length.toLocaleString("ar-EG")} عمليات</Text></View>{shiftExpenses.length ? <View style={styles.expenseList}>{shiftExpenses.map((expense) => <View style={styles.expenseRow} key={expense.id}><Text style={styles.expenseAmount}>{formatCurrency(expense.amount)}</Text><View style={styles.expenseInfo}><Text style={styles.expenseName}>{expense.title}</Text><Text style={styles.expenseMeta}>{expense.category} · {new Date(expense.createdAt).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</Text></View><View style={styles.expenseIcon}><Text style={styles.expenseIconText}>−</Text></View></View>)}</View> : <Text style={styles.emptyInline}>لم تُسجل مصروفات على هذا الشيفت بعد.</Text>}<View style={styles.expenseForm}><Text style={styles.formTitle}>تسجيل مصروف من الدرج</Text><AdminField label="البيان" value={expenseTitle} onChangeText={setExpenseTitle} placeholder="مثال: طلبية ابن سينا" /><AdminField label="المبلغ" value={expenseAmount} onChangeText={setExpenseAmount} placeholder="1000" keyboardType="decimal-pad" /><View style={styles.categoryRow}>{(["توريد", "تشغيل", "أخرى"] as const).map((category) => <TouchableOpacity key={category} onPress={() => setExpenseCategory(category)} style={[styles.category, expenseCategory === category && styles.categoryActive]} activeOpacity={0.8}><Text style={[styles.categoryText, expenseCategory === category && styles.categoryTextActive]}>{category}</Text></TouchableOpacity>)}</View><AdminButton title="خصم المصروف من الدرج" onPress={handleExpense} /></View></AdminCard><AdminCard><Text style={styles.cardTitle}>مطابقة الإغلاق</Text><AdminField label="النقدية الفعلية في الدرج" value={actualCash} onChangeText={setActualCash} placeholder={formatCurrency(expectedCash)} keyboardType="decimal-pad" /><AdminField label="ملاحظة اختيارية" value={note} onChangeText={setNote} placeholder="أي فرق أو ملاحظة" /></AdminCard></> : <AdminCard><Text style={styles.cardTitle}>بدء شيفت جديد</Text><AdminField label="اسم الصيدلي" value={pharmacistName} onChangeText={setPharmacistName} placeholder="مثال: أحمد محمد" /><AdminField label="الرصيد الافتتاحي" value={openingCash} onChangeText={setOpeningCash} placeholder="2000" keyboardType="decimal-pad" /><AdminButton title="بدء الشيفت" onPress={handleStart} /></AdminCard>}<Text style={adminStyles.sectionHeading}>سجل الشيفتات</Text>{shifts.length ? shifts.map((shift) => <TouchableOpacity key={shift.id} onPress={() => shift.closedAt && setSelectedShiftId(shift.id)} activeOpacity={shift.closedAt ? 0.75 : 1} style={styles.historyCard}><View style={styles.historyRow}><View style={styles.historyText}><Text style={styles.historyName}>{shift.pharmacistName}</Text><Text style={styles.historyMeta}>{new Date(shift.startedAt).toLocaleDateString("ar-EG")} · افتتاحي {formatCurrency(shift.openingCash)}</Text></View><View style={styles.historyStatusBox}><Text style={[styles.historyStatus, { color: shift.closedAt ? COLORS.primary : COLORS.warning }]}>{shift.closedAt ? `فرق ${formatCurrency(shift.difference ?? 0)}` : "مفتوح"}</Text>{shift.closedAt ? <Text style={styles.reviewHint}>اضغط للمراجعة</Text> : null}</View></View></TouchableOpacity>) : <AdminCard><Text style={styles.empty}>لا توجد شيفتات محفوظة بعد.</Text></AdminCard>}{selectedShift ? <AdminCard style={styles.detailCard}><View style={styles.cardHeading}><View style={styles.detailHeadingText}><Text style={styles.cardTitle}>تقرير إغلاق الشيفت</Text><Text style={styles.cardHint}>{selectedShift.closedAt ? `أُغلق ${new Date(selectedShift.closedAt).toLocaleString("ar-EG")}` : "الشيفت الحالي"}</Text></View><TouchableOpacity onPress={() => setSelectedShiftId(undefined)} style={styles.closeReport} activeOpacity={0.75}><Text style={styles.closeReportText}>إغلاق</Text></TouchableOpacity></View><View style={styles.reportHero}><Text style={styles.reportLabel}>الرصيد الفعلي في الدرج</Text><Text style={styles.reportValue}>{formatCurrency(selectedShift.actualCash ?? selectedExpectedCash)}</Text><Text style={styles.reportDifference}>الفرق عن المتوقع: {formatCurrency(selectedShift.difference ?? ((selectedShift.actualCash ?? selectedExpectedCash) - selectedExpectedCash))}</Text></View><View style={styles.summaryRow}><Summary label="إجمالي الشيفت" value={formatCurrency(selectedRevenue)} /><Summary label="المصروفات" value={formatCurrency(selectedExpenseTotal)} danger /><Summary label="المتوقع" value={formatCurrency(selectedExpectedCash)} /></View><View style={styles.reportRows}><ReportRow label="الرصيد الافتتاحي" value={formatCurrency(selectedShift.openingCash)} /><ReportRow label="المبيعات النقدية" value={formatCurrency(selectedCashSales)} /><ReportRow label="مصروفات الشيفت" value={formatCurrency(selectedExpenseTotal)} /><ReportRow label="الرصيد المتوقع" value={formatCurrency(selectedExpectedCash)} /></View>{selectedShiftExpenses.length ? <View style={styles.reportExpenses}><Text style={styles.formTitle}>تفاصيل المصروفات</Text>{selectedShiftExpenses.map((expense) => <View style={styles.reportExpenseRow} key={expense.id}><Text style={styles.reportExpenseAmount}>{formatCurrency(expense.amount)}</Text><Text style={styles.reportExpenseName}>{expense.title}</Text></View>)}</View> : null}{selectedShift.note ? <Text style={styles.reportNote}>ملاحظة: {selectedShift.note}</Text> : null}</AdminCard> : null}</AdminShell>;
+  const handleStart = () => {
+    const ok = startShift(pharmacistName, Number(openingCash) || 0);
+    if (!ok) return Alert.alert("تعذر بدء الشيفت", "أدخل اسم الصيدلي وتأكد من عدم وجود شيفت مفتوح.");
+    setPharmacistName("");
+    setOpeningCash("0");
+  };
+  const openCloseSheet = () => {
+    setActualCash("");
+    setNote("");
+    setIsCloseSheetOpen(true);
+  };
+  const handleClose = () => {
+    if (!activeShift || !hasActualCash) return Alert.alert("أدخل النقدية الفعلية", "أدخل قيمة النقدية الموجودة فعليًا في الدرج.");
+    closeShift(activeShift.id, actualCashValue, note.trim() || undefined);
+    setIsCloseSheetOpen(false);
+    setActualCash("");
+    setNote("");
+    Alert.alert("تم تقفيل الشيفت", `تم حفظ فرق الخزينة: ${formatCurrency(actualCashValue - expectedCash)}.`);
+  };
+
+  return (
+    <AdminShell title="إدارة الخزينة" subtitle="ملخص الشيفت الحالي ومطابقة الدرج">
+      {activeShift ? (
+        <AdminCard style={styles.currentCard}>
+          <Text style={styles.sectionTitle}>الشيفت الحالي</Text>
+          <View style={styles.hero}>
+            <View style={styles.heroTop}>
+              <Text style={styles.heroName}>{activeShift.pharmacistName}</Text>
+              <View style={styles.startedAt}><View style={styles.startedDot} /><Text style={styles.heroTime}>بدأ {new Date(activeShift.startedAt).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</Text></View>
+            </View>
+            <Text style={styles.heroLabel}>المتوقع في الدرج الآن</Text>
+            <Text style={styles.heroValue}>{formatCurrency(expectedCash)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Summary label="نقدية المبيعات" value={formatCurrency(cashSales)} />
+            <Summary label="مصروفات الشيفت" value={formatCurrency(expenseTotal)} accent={COLORS.warning} />
+          </View>
+          <AdminButton title="تقفيل الشيفت" onPress={openCloseSheet} />
+        </AdminCard>
+      ) : (
+        <AdminCard>
+          <Text style={styles.sectionTitle}>بدء شيفت جديد</Text>
+          <AdminField label="اسم الصيدلي" value={pharmacistName} onChangeText={setPharmacistName} placeholder="مثال: أحمد محمد" />
+          <AdminField label="الرصيد الافتتاحي" value={openingCash} onChangeText={setOpeningCash} placeholder="2000" keyboardType="decimal-pad" />
+          <AdminButton title="بدء الشيفت" onPress={handleStart} />
+        </AdminCard>
+      )}
+
+      <View style={styles.historySection}>
+        <View style={styles.historyHeading}>
+          <Text style={styles.historyCount}>{closedShifts.length.toLocaleString("ar-EG")} شيفت مغلق</Text>
+          <Text style={adminStyles.sectionHeading}>سجل الشيفتات السابقة</Text>
+        </View>
+        {closedShifts.length ? (
+          <View style={styles.historyCard}>
+            {closedShifts.map((shift, index) => (
+              <TouchableOpacity key={shift.id} onPress={() => setSelectedShiftId((current) => current === shift.id ? undefined : shift.id)} activeOpacity={0.72} style={[styles.historyRow, index > 0 && styles.historyDivider]}>
+                <View style={styles.historyAmount}><Text style={[styles.historyDifference, { color: (shift.difference ?? 0) < 0 ? COLORS.danger : COLORS.primary }]}>فرق {formatCurrency(shift.difference ?? 0)}</Text><Text style={styles.reviewHint}>{selectedShiftId === shift.id ? "إخفاء التقرير" : "عرض التقرير"}</Text></View>
+                <View style={styles.historyText}><Text style={styles.historyName}>{shift.pharmacistName}</Text><Text style={styles.historyMeta}>{new Date(shift.startedAt).toLocaleDateString("ar-EG")} · افتتاحي {formatCurrency(shift.openingCash)}</Text></View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : <AdminCard><Text style={styles.empty}>لا توجد شيفتات مغلقة بعد.</Text></AdminCard>}
+
+        {selectedShift ? <ClosedShiftReport shift={selectedShift} expectedCash={selectedExpectedCash} cashSales={selectedCashSales} expenseTotal={selectedExpenseTotal} expenses={selectedShiftExpenses} /> : null}
+      </View>
+
+      <CloseShiftSheet visible={isCloseSheetOpen} expectedCash={expectedCash} actualCash={actualCash} note={note} hasActualCash={hasActualCash} difference={difference} onActualCashChange={setActualCash} onNoteChange={setNote} onClose={() => setIsCloseSheetOpen(false)} onConfirm={handleClose} />
+    </AdminShell>
+  );
 }
 
-function Summary({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) { return <View style={styles.summaryBox}><Text style={[styles.summaryValue, danger && { color: COLORS.warning }]}>{value}</Text><Text style={styles.summaryLabel}>{label}</Text></View>; }
+function Summary({ label, value, accent = COLORS.ink }: { label: string; value: string; accent?: string }) {
+  return <View style={styles.summaryBox}><Text style={[styles.summaryValue, { color: accent }]}>{value}</Text><Text style={styles.summaryLabel}>{label}</Text></View>;
+}
+
+function CloseShiftSheet({ visible, expectedCash, actualCash, note, hasActualCash, difference, onActualCashChange, onNoteChange, onClose, onConfirm }: { visible: boolean; expectedCash: number; actualCash: string; note: string; hasActualCash: boolean; difference: number | null; onActualCashChange: (value: string) => void; onNoteChange: (value: string) => void; onClose: () => void; onConfirm: () => void }) {
+  const differenceColor = difference === null ? COLORS.muted : difference < 0 ? COLORS.danger : difference > 0 ? COLORS.primary : COLORS.success;
+  const differenceLabel = difference === null ? "أدخل النقدية الفعلية" : difference === 0 ? "مطابقة كاملة" : difference < 0 ? "عجز في الدرج" : "زيادة في الدرج";
+  return <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent><KeyboardAvoidingView style={styles.sheetOverlay} behavior={Platform.OS === "ios" ? "padding" : undefined}><TouchableOpacity style={styles.sheetBackdrop} onPress={onClose} activeOpacity={1} /><View style={styles.bottomSheet}><View style={styles.sheetHandle} /><View style={styles.sheetHeading}><TouchableOpacity onPress={onClose} style={styles.sheetClose} activeOpacity={0.7}><Text style={styles.sheetCloseText}>×</Text></TouchableOpacity><Text style={styles.sheetTitle}>تقفيل الشيفت</Text></View><View style={styles.expectedRow}><Text style={styles.expectedValue}>{formatCurrency(expectedCash)}</Text><Text style={styles.expectedLabel}>المتوقع في الدرج</Text></View><AdminField label="النقدية الفعلية في الدرج" value={actualCash} onChangeText={onActualCashChange} placeholder="0" keyboardType="decimal-pad" /><View style={[styles.differenceBox, { backgroundColor: difference === null ? "#F2F1EE" : difference < 0 ? "#FFE4D8" : "#DFF5EB" }]}><Text style={[styles.differenceValue, { color: differenceColor }]}>{difference === null ? "—" : formatCurrency(difference)}</Text><Text style={[styles.differenceLabel, { color: differenceColor }]}>{differenceLabel}</Text></View><AdminField label="ملاحظة (اختياري)" value={note} onChangeText={onNoteChange} placeholder="اكتب سبب الفرق إن وُجد" /><AdminButton title="تأكيد وتقفيل الشيفت" onPress={onConfirm} disabled={!hasActualCash} /></View></KeyboardAvoidingView></Modal>;
+}
+
+function ClosedShiftReport({ shift, expectedCash, cashSales, expenseTotal, expenses }: { shift: { pharmacistName: string; openingCash: number; actualCash?: number; difference?: number; note?: string; closedAt?: string }; expectedCash: number; cashSales: number; expenseTotal: number; expenses: { id: string; title: string; amount: number }[] }) {
+  return <AdminCard style={styles.reportCard}><Text style={styles.reportTitle}>تقرير شيفت {shift.pharmacistName}</Text><Text style={styles.reportDate}>{shift.closedAt ? new Date(shift.closedAt).toLocaleString("ar-EG") : ""}</Text><View style={styles.reportRows}><ReportRow label="نقدية المبيعات" value={formatCurrency(cashSales)} /><ReportRow label="مصروفات الشيفت" value={formatCurrency(expenseTotal)} /><ReportRow label="المتوقع في الدرج" value={formatCurrency(expectedCash)} /><ReportRow label="الفعلي في الدرج" value={formatCurrency(shift.actualCash ?? expectedCash)} /><ReportRow label="الفرق" value={formatCurrency(shift.difference ?? 0)} /></View>{expenses.length ? <View style={styles.reportExpenses}>{expenses.map((expense) => <View style={styles.reportExpenseRow} key={expense.id}><Text style={styles.reportExpenseAmount}>{formatCurrency(expense.amount)}</Text><Text style={styles.reportExpenseName}>{expense.title}</Text></View>)}</View> : null}{shift.note ? <Text style={styles.reportNote}>ملاحظة: {shift.note}</Text> : null}</AdminCard>;
+}
+
 function ReportRow({ label, value }: { label: string; value: string }) { return <View style={styles.reportRow}><Text style={styles.reportRowValue}>{value}</Text><Text style={styles.reportRowLabel}>{label}</Text></View>; }
 
-const styles = StyleSheet.create({ currentCard: { padding: 20 }, cardHeading: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 15 }, cardTitle: { color: COLORS.ink, fontSize: 16, fontWeight: "900", textAlign: "right" }, cardHint: { color: COLORS.muted, fontSize: 11, fontWeight: "800" }, openBadge: { flexDirection: "row-reverse", alignItems: "center", gap: 5, borderRadius: 14, backgroundColor: COLORS.mint, paddingHorizontal: 10, paddingVertical: 6 }, openDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.primary }, openText: { color: COLORS.primary, fontSize: 10, fontWeight: "900" }, hero: { backgroundColor: COLORS.primary, borderRadius: 27, padding: 20, minHeight: 190 }, heroTop: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, heroName: { color: "#FFFFFF", fontSize: 16, fontWeight: "900" }, heroTime: { color: "#D5F6E8", fontSize: 11 }, heroLabel: { color: "#D5F6E8", fontSize: 13, fontWeight: "800", textAlign: "right", marginTop: 22 }, heroValue: { color: "#FFFFFF", fontSize: 34, lineHeight: 42, fontWeight: "900", textAlign: "right", marginTop: 4 }, heroFormula: { color: "#D5F6E8", fontSize: 10, textAlign: "right", marginTop: 11 }, summaryRow: { flexDirection: "row-reverse", gap: 7, marginVertical: 14 }, summaryBox: { flex: 1, minHeight: 68, borderRadius: 19, backgroundColor: "#F2F1EE", padding: 9, alignItems: "center", justifyContent: "center" }, summaryValue: { color: COLORS.ink, fontSize: 12, fontWeight: "900" }, summaryLabel: { color: COLORS.muted, fontSize: 9, textAlign: "center", marginTop: 4 }, expenseList: { gap: 5 }, expenseRow: { minHeight: 67, flexDirection: "row-reverse", alignItems: "center", gap: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border }, expenseInfo: { flex: 1, alignItems: "flex-end" }, expenseName: { color: COLORS.ink, fontSize: 13, fontWeight: "900" }, expenseMeta: { color: COLORS.muted, fontSize: 10, marginTop: 3 }, expenseAmount: { color: COLORS.warning, fontSize: 13, fontWeight: "900", minWidth: 63, textAlign: "left" }, expenseIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: COLORS.softWarning, alignItems: "center", justifyContent: "center" }, expenseIconText: { color: COLORS.warning, fontSize: 25, fontWeight: "300" }, expenseForm: { marginTop: 15, paddingTop: 15, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border }, formTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "900", textAlign: "right", marginBottom: 12 }, categoryRow: { flexDirection: "row-reverse", gap: 7, marginBottom: 12 }, category: { flex: 1, minHeight: 42, borderRadius: 15, backgroundColor: "#F2F1EE", alignItems: "center", justifyContent: "center" }, categoryActive: { backgroundColor: COLORS.primary }, categoryText: { color: COLORS.ink, fontSize: 11, fontWeight: "900" }, categoryTextActive: { color: "#FFFFFF" }, emptyInline: { color: COLORS.muted, fontSize: 11, textAlign: "right", paddingVertical: 6 }, detailCard: { padding: 20 }, detailHeadingText: { flex: 1, alignItems: "flex-end" }, closeReport: { borderRadius: 13, backgroundColor: "#F2F1EE", paddingHorizontal: 12, paddingVertical: 8 }, closeReportText: { color: COLORS.muted, fontSize: 10, fontWeight: "900" }, reportHero: { backgroundColor: COLORS.deep, borderRadius: 24, padding: 18, marginBottom: 12 }, reportLabel: { color: "#BFEEDF", fontSize: 12, textAlign: "right", fontWeight: "800" }, reportValue: { color: "#FFFFFF", fontSize: 30, lineHeight: 38, textAlign: "right", fontWeight: "900", marginTop: 5 }, reportDifference: { color: "#F7C5A7", fontSize: 11, textAlign: "right", marginTop: 6 }, reportRows: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border, marginTop: 4 }, reportRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", minHeight: 42, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border }, reportRowLabel: { color: COLORS.muted, fontSize: 11, fontWeight: "700" }, reportRowValue: { color: COLORS.ink, fontSize: 12, fontWeight: "900" }, reportExpenses: { marginTop: 15, paddingTop: 13, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border }, reportExpenseRow: { flexDirection: "row-reverse", justifyContent: "space-between", paddingVertical: 7 }, reportExpenseName: { color: COLORS.ink, fontSize: 11, fontWeight: "800" }, reportExpenseAmount: { color: COLORS.warning, fontSize: 11, fontWeight: "900" }, reportNote: { color: COLORS.muted, fontSize: 11, lineHeight: 18, textAlign: "right", marginTop: 14 }, historyCard: { marginBottom: 9, borderRadius: 22, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E5ECE8", padding: 16 }, historyStatusBox: { alignItems: "flex-end", gap: 3 }, reviewHint: { color: COLORS.muted, fontSize: 9, fontWeight: "700" }, historyRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, historyText: { flex: 1, alignItems: "flex-end" }, historyName: { color: COLORS.ink, fontSize: 13, fontWeight: "900" }, historyMeta: { color: COLORS.muted, fontSize: 10, marginTop: 4 }, historyStatus: { fontSize: 11, fontWeight: "900" }, empty: { color: COLORS.muted, fontSize: 12, textAlign: "right" } });
+const styles = StyleSheet.create({
+  currentCard: { padding: 18 },
+  sectionTitle: { color: COLORS.ink, fontSize: 17, fontWeight: "900", textAlign: "right", marginBottom: 14 },
+  hero: { backgroundColor: COLORS.primary, borderRadius: 26, padding: 19, minHeight: 181 },
+  heroTop: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  heroName: { color: "#FFFFFF", fontSize: 16, fontWeight: "900" },
+  startedAt: { flexDirection: "row-reverse", gap: 5, alignItems: "center" },
+  startedDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#D5F6E8" },
+  heroTime: { color: "#D5F6E8", fontSize: 11, fontWeight: "800" },
+  heroLabel: { color: "#D5F6E8", fontSize: 13, fontWeight: "800", textAlign: "right", marginTop: 29 },
+  heroValue: { color: "#FFFFFF", fontSize: 35, lineHeight: 44, fontWeight: "900", textAlign: "right", marginTop: 4 },
+  summaryRow: { flexDirection: "row-reverse", gap: 9, marginVertical: 14 },
+  summaryBox: { flex: 1, minHeight: 76, borderRadius: 20, backgroundColor: "#F2F1EE", alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
+  summaryValue: { fontSize: 15, fontWeight: "900" },
+  summaryLabel: { color: COLORS.muted, fontSize: 10, textAlign: "center", marginTop: 5, fontWeight: "800" },
+  historySection: { marginTop: 16 },
+  historyHeading: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" },
+  historyCount: { color: COLORS.muted, fontSize: 10, fontWeight: "800", marginTop: 19 },
+  historyCard: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 24, paddingHorizontal: 16 },
+  historyRow: { minHeight: 74, flexDirection: "row-reverse", alignItems: "center", gap: 10 },
+  historyDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
+  historyText: { flex: 1, alignItems: "flex-end" },
+  historyName: { color: COLORS.ink, fontSize: 13, fontWeight: "900" },
+  historyMeta: { color: COLORS.muted, fontSize: 10, marginTop: 4 },
+  historyAmount: { minWidth: 79, alignItems: "flex-start" },
+  historyDifference: { fontSize: 11, fontWeight: "900" },
+  reviewHint: { color: COLORS.muted, fontSize: 9, marginTop: 4 },
+  empty: { color: COLORS.muted, fontSize: 12, textAlign: "right" },
+  reportCard: { marginTop: 12 },
+  reportTitle: { color: COLORS.ink, fontSize: 15, fontWeight: "900", textAlign: "right" },
+  reportDate: { color: COLORS.muted, fontSize: 10, textAlign: "right", marginTop: 4 },
+  reportRows: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
+  reportRow: { minHeight: 39, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  reportRowLabel: { color: COLORS.muted, fontSize: 11, fontWeight: "700" },
+  reportRowValue: { color: COLORS.ink, fontSize: 12, fontWeight: "900" },
+  reportExpenses: { marginTop: 11 },
+  reportExpenseRow: { minHeight: 30, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  reportExpenseName: { color: COLORS.muted, fontSize: 10, fontWeight: "800" },
+  reportExpenseAmount: { color: COLORS.warning, fontSize: 10, fontWeight: "900" },
+  reportNote: { color: COLORS.muted, fontSize: 11, lineHeight: 18, textAlign: "right", marginTop: 10 },
+  sheetOverlay: { flex: 1, backgroundColor: "rgba(13, 36, 32, 0.46)", justifyContent: "flex-end" },
+  sheetBackdrop: { ...StyleSheet.absoluteFillObject },
+  bottomSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, paddingTop: 11, paddingBottom: 28 },
+  sheetHandle: { width: 38, height: 4, borderRadius: 3, backgroundColor: "#D9DEDB", alignSelf: "center", marginBottom: 14 },
+  sheetHeading: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 15 },
+  sheetTitle: { color: COLORS.ink, fontSize: 18, fontWeight: "900" },
+  sheetClose: { width: 37, height: 37, borderRadius: 12, backgroundColor: "#F2F1EE", alignItems: "center", justifyContent: "center" },
+  sheetCloseText: { color: COLORS.muted, fontSize: 25, fontWeight: "300", lineHeight: 29 },
+  expectedRow: { backgroundColor: "#F2F1EE", borderRadius: 18, paddingHorizontal: 15, minHeight: 62, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  expectedValue: { color: COLORS.ink, fontSize: 17, fontWeight: "900" },
+  expectedLabel: { color: COLORS.muted, fontSize: 12, fontWeight: "800" },
+  differenceBox: { minHeight: 63, borderRadius: 18, paddingHorizontal: 15, flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
+  differenceLabel: { fontSize: 12, fontWeight: "900" },
+  differenceValue: { fontSize: 18, fontWeight: "900" },
+});
