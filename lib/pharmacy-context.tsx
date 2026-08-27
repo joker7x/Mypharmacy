@@ -75,6 +75,10 @@ export const getExpiryBatches = (medication: Pick<Medication, "expiryDate" | "qu
 };
 
 export const getNearestExpiryDate = (medication: Pick<Medication, "expiryDate" | "quantity" | "expiryBatches">) => getExpiryBatches(medication)[0]?.expiryDate ?? medication.expiryDate;
+export const formatExpiryMonthYear = (date: string) => {
+  const parsed = new Date(`${date}T12:00:00`);
+  return `${parsed.getMonth() + 1}/${parsed.getFullYear()}`;
+};
 
 const withExpiryBatches = (medication: Omit<Medication, "id">): Omit<Medication, "id"> => {
   const expiryBatches = getExpiryBatches(medication);

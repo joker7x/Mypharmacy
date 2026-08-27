@@ -5,7 +5,7 @@ import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInpu
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { COLORS, PageHeader, commonStyles } from "@/components/app-ui";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { formatShortDate, getExpiryBatches, getUnitPrice, getUnitsPerPackage, isExpirySoon, Medication, usePharmacy } from "@/lib/pharmacy-context";
+import { formatExpiryMonthYear, getExpiryBatches, getUnitPrice, getUnitsPerPackage, isExpirySoon, Medication, usePharmacy } from "@/lib/pharmacy-context";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
 
@@ -150,7 +150,7 @@ function ReadOnlyMedicationDetails({ form }: { form: FormState }) {
 
 function ExpiryHistory({ medication }: { medication: Medication }) {
   const batches = getExpiryBatches(medication);
-  return <View style={styles.expiryHistory}><View style={styles.expiryHeadingRow}><Text style={styles.expiryCount}>{batches.length.toLocaleString("ar-EG")} دفعة</Text><Text style={styles.expiryHeading}>سجل تواريخ الصلاحية</Text></View>{batches.map((batch, index) => { const highlighted = index === 0; const urgent = isExpirySoon(batch.expiryDate); return <View key={batch.id} style={[styles.expiryBatch, highlighted && (urgent ? styles.expiryBatchUrgent : styles.expiryBatchNearest)]}><View style={styles.expiryBatchText}><Text style={[styles.expiryBatchDate, highlighted && (urgent ? styles.expiryBatchDateUrgent : styles.expiryBatchDateNearest)]}>{formatShortDate(batch.expiryDate)}</Text><Text style={styles.expiryBatchLabel}>{highlighted ? "الأقرب للصلاحية" : "دفعة لاحقة"}</Text></View><Text style={[styles.expiryBatchQuantity, highlighted && (urgent ? styles.expiryBatchQuantityUrgent : styles.expiryBatchQuantityNearest)]}>{batch.quantity.toLocaleString("ar-EG")} وحدة</Text></View>; })}</View>;
+  return <View style={styles.expiryHistory}><View style={styles.expiryHeadingRow}><Text style={styles.expiryCount}>{batches.length.toLocaleString("ar-EG")} دفعة</Text><Text style={styles.expiryHeading}>سجل تواريخ الصلاحية</Text></View>{batches.map((batch, index) => { const highlighted = index === 0; const urgent = isExpirySoon(batch.expiryDate); return <View key={batch.id} style={[styles.expiryBatch, highlighted && (urgent ? styles.expiryBatchUrgent : styles.expiryBatchNearest)]}><View style={styles.expiryBatchText}><Text style={[styles.expiryBatchDate, highlighted && (urgent ? styles.expiryBatchDateUrgent : styles.expiryBatchDateNearest)]}>{formatExpiryMonthYear(batch.expiryDate)}</Text><Text style={styles.expiryBatchLabel}>{highlighted ? "الأقرب للصلاحية" : "دفعة لاحقة"}</Text></View><Text style={[styles.expiryBatchQuantity, highlighted && (urgent ? styles.expiryBatchQuantityUrgent : styles.expiryBatchQuantityNearest)]}>المتاح {batch.quantity.toLocaleString("ar-EG")} وحدة</Text></View>; })}</View>;
 }
 
 function Field({ label, value, onChangeText, placeholder, keyboardType, writingDirection = "rtl" }: { label: string; value: string; onChangeText: (value: string) => void; placeholder: string; keyboardType?: "default" | "decimal-pad" | "number-pad"; writingDirection?: "rtl" | "ltr" }) {

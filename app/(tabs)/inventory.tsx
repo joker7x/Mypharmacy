@@ -4,7 +4,7 @@ import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from "r
 
 import { COLORS, PageHeader, RoundIcon } from "@/components/app-ui";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { formatCurrency, formatShortDate, getNearestExpiryDate, isExpirySoon, Medication, usePharmacy } from "@/lib/pharmacy-context";
+import { formatCurrency, formatExpiryMonthYear, getNearestExpiryDate, isExpirySoon, Medication, usePharmacy } from "@/lib/pharmacy-context";
 import { ScreenContainer } from "@/components/screen-container";
 
 type Filter = "الكل" | "مخزون منخفض" | "صلاحية قريبة";
@@ -121,7 +121,7 @@ const InventoryRow = memo(function InventoryRow({ item }: { item: Medication }) 
   const packages = Math.ceil(item.quantity / Math.max(1, item.unitsPerPackage ?? 1));
   const statusColor = lowStock ? COLORS.danger : expirySoon ? "#E7B52E" : COLORS.success;
   const supportingText = expirySoon
-    ? `الأقرب ${formatShortDate(nearestExpiry)} · ${packages.toLocaleString("ar-EG")} عبوة`
+    ? `الأقرب ${formatExpiryMonthYear(nearestExpiry)} · ${packages.toLocaleString("ar-EG")} عبوة`
     : `${item.category || "أخرى"} · ${packages.toLocaleString("ar-EG")} عبوة`;
 
   return (
