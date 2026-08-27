@@ -15,22 +15,25 @@ const emptyForm: FormState = { catalogId: undefined, name: "", category: "", sku
 
 export default function MedicineFormScreen() {
   const { id, catalogId: initialCatalogId } = useLocalSearchParams<{ id?: string; catalogId?: string }>();
-  const { medications, addMedication, updateMedication, deleteMedication } = usePharmacy();
-  const existing = typeof id === "string" ? medications.find((item) => item.id === id) : undefined;
+  const { medications, addMedication, updateMedication, deleteMedication, isReady } = usePharmacy();
+  const idParam = Array.isArray(id) ? id[0] : id;
+  const initialCatalogIdParam = Array.isArray(initialCatalogId) ? initialCatalogId[0] : initialCatalogId;
+  const existing = typeof idParam === "string" ? medications.find((item) => item.id === idParam) : undefined;
   const [form, setForm] = useState<FormState>(existing ? { catalogId: existing.catalogId, name: existing.name, category: existing.category, sku: existing.sku, barcode: existing.barcode ?? "", price: existing.price, unitsPerPackage: getUnitsPerPackage(existing), reorderLevel: existing.reorderLevel, expiryDate: existing.expiryDate } : emptyForm);
   const [packages, setPackages] = useState(existing ? Math.ceil(existing.quantity / getUnitsPerPackage(existing)) : 0);
-  const [catalogSearch, setCatalogSearch] = useState(typeof initialCatalogId === "string" ? initialCatalogId : "");
+  const [catalogSearch, setCatalogSearch] = useState(typeof initialCatalogIdParam === "string" ? initialCatalogIdParam : "");
   const [scannerOpen, setScannerOpen] = useState(false);
   const deferredSearch = useDeferredValue(catalogSearch.trim());
   const catalogQuery = trpc.catalog.search.useQuery({ query: deferredSearch.length >= 2 ? deferredSearch : "xx", limit: 12, offset: 0 }, { enabled: !existing && !form.catalogId && deferredSearch.length >= 2, staleTime: 120_000 });
-  const directProductQuery = trpc.catalog.product.useQuery({ externalId: typeof initialCatalogId === "string" ? initialCatalogId : "x" }, { enabled: Boolean(initialCatalogId) && !existing });
+  const directProductQuery = trpc.catalog.product.useQuery({ externalId: typeof initialCatalogIdParam === "string" ? initialCatalogIdParam : "x" }, { enabled: Boolean(initialCatalogIdParam) && !existing });
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) => setForm((current) => ({ ...current, [field]: value }));
   const sellableUnits = packages * getUnitsPerPackage(form);
   const pricePerUnit = getUnitPrice(form);
   const isLockedCatalogAddition = !existing && Boolean(form.catalogId);
 
   const selectCatalogProduct = (product: CatalogProduct) => {
-    setForm({ catalogId: product.externalId, name: product.arabicName || product.name, category: product.category || "أخرى", sku: product.barcode || product.externalId, barcode: product.barcode || "", price: Number(product.currentPrice) || 0, unitsPerPackage: Math.max(1, product.unitsPerPackage || 1), reorderLevel: 5, expiryDate: "" });
+    setForm({ catalogId: product.externalId, name: product.arabicName || product.name, category: product.category || "أخرى", sku: product.barcode || product.externalId, barcode: product.barcode || "", price: Number(product.currentPrice) || 0, unitsPerPackage: Math.max(1, product.unitsPerPackage || 1), reorderLevel: 5, expiryDate: nextYearDate() });
+    setPackages((current) => Math.max(1, current));
     setCatalogSearch("");
   };
 
@@ -39,13 +42,14 @@ export default function MedicineFormScreen() {
   }, [directProductQuery.data, form.catalogId]);
 
   const save = () => {
-    if (!form.name.trim() || !form.category.trim() || !form.sku.trim() || !form.expiryDate.trim() || form.price < 0 || packages < 0 || form.reorderLevel < 0) {
-      return Alert.alert("بيانات غير مكتملة", "اختر دواءً من الدليل ثم أدخل كمية المخزون وتاريخ الصلاحية.");
-    }
+    if (!isReady) return Alert.alert("جارٍ تجهيز المخزون", "انتظر لحظات حتى يكتمل تحميل بيانات المخزون، ثم أضف الصنف.");
+    if (!existing && !form.catalogId) return Alert.alert("اختر صنفًا أولًا", "ابحث عن الدواء ثم اختره من دليل الأدوية قبل الحفظ.");
+    if (!form.name.trim() || !form.category.trim() || !form.sku.trim() || !form.expiryDate.trim() || form.price < 0 || form.reorderLevel < 0) return Alert.alert("بيانات الصنف غير مكتملة", "تعذر تجهيز بيانات الصنف. ارجع واختره من الدليل مرة أخرى.");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(form.expiryDate)) return Alert.alert("تاريخ غير صحيح", "استخدم الصيغة YYYY-MM-DD مثل 2027-05-20.");
-    const medication = { ...form, quantity: sellableUnits };
+    if (!Number.isFinite(packages) || packages < 1) return Alert.alert("أدخل كمية المخزون", "أدخل عبوة واحدة على الأقل قبل إضافة الصنف إلى المخزون.");
+    const medication = { ...form, quantity: Math.trunc(packages) * getUnitsPerPackage(form) };
     if (existing) updateMedication(existing.id, medication); else addMedication(medication);
-    router.back();
+    if (existing) router.back(); else router.replace("/(tabs)/inventory");
   };
 
   const remove = () => {
@@ -105,7 +109,7 @@ export default function MedicineFormScreen() {
           {existing ? <EditableMedicationFields form={form} setField={setField} /> : null}
           <View style={styles.twoColumns}>
             <View style={styles.halfField}>
-              <Field label="كمية المخزون (عبوات)" value={String(packages || "")} onChangeText={(value) => setPackages(Number(value.replace(/[^0-9]/g, "")) || 0)} placeholder="0" keyboardType="number-pad" writingDirection="ltr" />
+              <Field label="كمية المخزون (عبوات)" value={String(packages)} onChangeText={(value) => setPackages(Number(value.replace(/[^0-9]/g, "")) || 0)} placeholder="0" keyboardType="number-pad" writingDirection="ltr" />
             </View>
             {existing ? <View style={styles.halfField}><Field label="وحدات البيع بالعبوة" value={String(getUnitsPerPackage(form))} onChangeText={(value) => setField("unitsPerPackage", Math.max(1, Number(value.replace(/[^0-9]/g, "")) || 1))} placeholder="1" keyboardType="number-pad" writingDirection="ltr" /></View> : null}
           </View>
@@ -120,9 +124,9 @@ export default function MedicineFormScreen() {
           </View>
         </View>
 
-        <TouchableOpacity onPress={save} style={commonStyles.primaryButton} activeOpacity={0.85}>
+        <TouchableOpacity onPress={save} style={[commonStyles.primaryButton, !isReady && styles.disabledSave]} activeOpacity={0.85} disabled={!isReady}>
           <IconSymbol name="checkmark.circle.fill" size={20} color="#FFFFFF" />
-          <Text style={commonStyles.primaryButtonText}>{existing ? "حفظ التعديلات" : "إضافة إلى المخزون"}</Text>
+          <Text style={commonStyles.primaryButtonText}>{!isReady ? "جارٍ تجهيز المخزون..." : existing ? "حفظ التعديلات" : "إضافة إلى المخزون"}</Text>
         </TouchableOpacity>
         {existing ? <TouchableOpacity onPress={remove} style={styles.deleteButton} activeOpacity={0.8}><IconSymbol name="trash" size={18} color={COLORS.danger} /><Text style={styles.deleteText}>حذف الصنف</Text></TouchableOpacity> : null}
       </ScrollView>
@@ -140,6 +144,7 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, writingD
 }
 
 function formatPrice(price: number) { return `${price.toLocaleString("ar-EG")} ج.م`; }
+function nextYearDate() { return new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10); }
 
 const styles = StyleSheet.create({
   back: { alignSelf: "flex-end", flexDirection: "row-reverse", alignItems: "center", gap: 3, marginBottom: 17, padding: 4 },
@@ -170,6 +175,7 @@ const styles = StyleSheet.create({
   singleField: { width: "100%" },
   unitSummary: { padding: 11, backgroundColor: COLORS.mint, borderRadius: 12, marginTop: 2 },
   unitSummaryText: { color: COLORS.primary, fontSize: 11, fontWeight: "900", textAlign: "right" },
+  disabledSave: { opacity: 0.55 },
   deleteButton: { minHeight: 46, flexDirection: "row-reverse", gap: 7, alignItems: "center", justifyContent: "center", marginTop: 15 },
   deleteText: { color: COLORS.danger, fontSize: 13, fontWeight: "800" },
 });
