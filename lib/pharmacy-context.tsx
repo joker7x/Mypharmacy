@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ReactNode, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createLocalStorage, type LocalStorage } from "./local-storage";
+import { DEFAULT_PRINTER_SETTINGS, type PrinterSettings } from "./printer-types";
 
 
 export type ExpiryBatch = { id: string; expiryDate: string; quantity: number; receivedAt: string };
@@ -27,7 +28,7 @@ export type IncomingOrder = { id: string; supplierName: string; sourceType: "ش�
 export type Shift = { id: string; pharmacistName: string; openingCash: number; startedAt: string; closedAt?: string; actualCash?: number; difference?: number; note?: string };
 export type Expense = { id: string; title: string; amount: number; category: "توريد" | "تشغيل" | "أخرى"; createdAt: string; orderId?: string; paidAmount?: number; shiftId?: string };
 export type CustomerDebt = { id: string; customerName: string; phone?: string; total: number; paid: number; createdAt: string; note?: string };
-export type PharmacySettings = { imageRetentionDays: number };
+export type PharmacySettings = { imageRetentionDays: number; printer: PrinterSettings };
 export type ReorderRecord = { medicationId: string; markedAt: string; quantityAtMark: number; manual?: boolean; status?: "needed" | "ordered" };
 export type ReorderNeed = { medication: Medication; status: "needed" | "ordered"; resumed: boolean; orderedAt?: string };
 export type PharmacyAlert = { id: string; medicationId: string; title: string; detail: string; severity: "high" | "medium" | "low"; kind: "stock" | "expiry" };
@@ -129,7 +130,7 @@ const createDemoState = (): PharmacyState => ({
   shifts: [],
   expenses: [],
   debts: [],
-  settings: { imageRetentionDays: 30 },
+  settings: { imageRetentionDays: 30, printer: DEFAULT_PRINTER_SETTINGS },
 });
 
 export const normalizePharmacyState = (stored: Partial<PharmacyState>): PharmacyState => {
@@ -143,7 +144,7 @@ export const normalizePharmacyState = (stored: Partial<PharmacyState>): Pharmacy
     shifts: Array.isArray(stored.shifts) ? stored.shifts : [],
     expenses: Array.isArray(stored.expenses) ? stored.expenses : [],
     debts: Array.isArray(stored.debts) ? stored.debts : [],
-    settings: { imageRetentionDays: 30, ...(stored.settings ?? {}) },
+    settings: { imageRetentionDays: stored.settings?.imageRetentionDays ?? 30, printer: { ...DEFAULT_PRINTER_SETTINGS, ...(stored.settings?.printer ?? {}) } },
   };
 };
 

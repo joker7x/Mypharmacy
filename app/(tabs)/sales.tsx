@@ -6,6 +6,7 @@ import { BarcodeScanner } from "@/components/barcode-scanner";
 import { COLORS, RoundIcon, commonStyles } from "@/components/app-ui";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { CartItem, calculateCashChange, formatCurrency, getUnitPrice, usePharmacy } from "@/lib/pharmacy-context";
+import { printReceipt } from "@/lib/printer-service";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
 
@@ -13,7 +14,7 @@ type CatalogProduct = { externalId: string; arabicName: string; name: string; ba
 type PaymentMethod = "نقدي" | "بطاقة" | "محفظة";
 
 export default function SalesScreen() {
-  const { medications, completeSale } = usePharmacy();
+  const { medications, completeSale, settings } = usePharmacy();
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("نقدي");
@@ -39,15 +40,20 @@ export default function SalesScreen() {
   };
 
   const changeQuantity = (id: string, delta: number) => setCart((current) => current.flatMap((item) => { const available = medications.find((product) => product.id === id)?.quantity ?? 0; const next = Math.min(available, item.quantity + delta); return item.medicationId !== id ? [item] : next > 0 ? [{ ...item, quantity: next }] : []; }));
-  const finishSale = (received?: number) => {
+  const finishSale = async (received?: number) => {
     const succeeded = completeSale(cart, paymentMethod, paymentMethod === "نقدي" ? { cashReceived: received, change: calculateCashChange(total, received ?? 0) } : undefined);
     if (!succeeded) return Alert.alert("تعذّر إتمام البيع", "تحقق من الوحدات المتاحة والمبلغ المدفوع ثم حاول مرة أخرى.");
     const paidChange = calculateCashChange(total, received ?? 0);
+    const receipt = { receiptNumber: `S-${Date.now().toString().slice(-6)}`, createdAt: new Date().toISOString(), items: cart.map((item) => ({ name: item.name, quantity: item.quantity, unitPrice: item.unitPrice })), total, paymentMethod, cashReceived: received, change: paidChange };
     setCart([]); setPaymentVisible(false); setCashReceived("");
+    if (settings.printer.savedPrinter) {
+      try { await printReceipt(settings.printer.savedPrinter, receipt); Alert.alert("تم تسجيل البيع وطباعة الإيصال", "تم حفظ الفاتورة وإرسال الإيصال للطابعة."); return; }
+      catch (error) { Alert.alert("تم تسجيل البيع", `حُفظت الفاتورة، لكن تعذرت الطباعة: ${error instanceof Error ? error.message : "خطأ في الاتصال."}`); return; }
+    }
     Alert.alert("تم تسجيل البيع", paymentMethod === "نقدي" ? `تم حفظ الفاتورة. الباقي للعميل ${formatCurrency(paidChange)}.` : `تم حفظ الفاتورة بقيمة ${formatCurrency(total)} عبر ${paymentMethod}.`);
   };
-  const handleCheckout = () => { if (!cart.length) return; if (paymentMethod === "نقدي") { setCashReceived(String(total)); setPaymentVisible(true); } else finishSale(); };
-  const confirmCash = () => { if (enteredCash < total) return Alert.alert("المبلغ غير كافٍ", `المطلوب ${formatCurrency(total)} والمدفوع ${formatCurrency(enteredCash)}.`); finishSale(enteredCash); };
+  const handleCheckout = () => { if (!cart.length) return; if (paymentMethod === "نقدي") { setCashReceived(String(total)); setPaymentVisible(true); } else void finishSale(); };
+  const confirmCash = () => { if (enteredCash < total) return Alert.alert("المبلغ غير كافٍ", `المطلوب ${formatCurrency(total)} والمدفوع ${formatCurrency(enteredCash)}.`); void finishSale(enteredCash); };
 
   return <ScreenContainer edges={["top", "bottom", "left", "right"]} className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"><View style={styles.topBar}><TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.75}><IconSymbol name="chevron.right" size={21} color={COLORS.ink} /></TouchableOpacity><View style={styles.cashierHeading}><Text style={styles.eyebrow}>فاتورة جديدة</Text><Text style={styles.cashierTitle}>الكاشير</Text></View><TouchableOpacity onPress={() => setScannerOpen(true)} style={styles.headerScanner} activeOpacity={0.8}><IconSymbol name="barcode.viewfinder" size={22} color="#83E4C3" /></TouchableOpacity></View><View style={styles.searchBox}><TouchableOpacity onPress={() => setScannerOpen(true)} style={styles.scanButton} activeOpacity={0.8}><IconSymbol name="barcode.viewfinder" size={20} color={COLORS.primary} /></TouchableOpacity><IconSymbol name="magnifyingglass" size={20} color="#969C99" /><TextInput value={search} onChangeText={setSearch} placeholder="ابحث باسم الدواء أو الباركود" placeholderTextColor="#969C99" style={styles.searchInput} returnKeyType="search" /></View>
     {deferredSearch.length >= 2 ? <><Text style={styles.sectionTitle}>نتائج البحث</Text><View style={styles.productsCard}>{catalogQuery.isFetching ? <Text style={styles.noProducts}>جارٍ البحث في دليل الأدوية...</Text> : catalogMatches.map((product, index) => { const stockItem = findLocal(product); return <View key={product.externalId}><View style={styles.productRow}><TouchableOpacity onPress={() => stockItem ? addToCart(stockItem.id) : router.push({ pathname: "/medicine-form", params: { catalogId: product.externalId } })} style={styles.addButton} activeOpacity={0.75}><IconSymbol name={stockItem ? "plus.circle.fill" : "shippingbox.fill"} size={23} color={COLORS.primary} /></TouchableOpacity><View style={styles.productText}><Text style={styles.productName}>{product.arabicName}</Text><Text style={styles.productMeta}>{product.company || "دليل الأدوية"} · {product.unitsPerPackage || 1} وحدة/عبوة · {Number(product.currentPrice).toLocaleString("ar-EG")} ج.م</Text><Text style={styles.stockStatus}>{stockItem ? `متاح للبيع: ${stockItem.quantity} وحدة` : "سجّله بالمخزون أولًا للبيع"}</Text></View><RoundIcon name="cross.case.fill" /></View>{index < catalogMatches.length - 1 ? <View style={commonStyles.rowDivider} /> : null}</View>; })}{!catalogMatches.length && !catalogQuery.isFetching ? <Text style={styles.noProducts}>لا توجد نتائج مطابقة في دليل الأدوية.</Text> : null}</View></> : null}

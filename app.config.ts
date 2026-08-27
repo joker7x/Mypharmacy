@@ -64,7 +64,7 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS"],
+    permissions: ["POST_NOTIFICATIONS", "android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_CONNECT", "android.permission.ACCESS_FINE_LOCATION"],
     intentFilters: [
       {
         action: "VIEW",
@@ -86,6 +86,14 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    [
+      "with-rn-bluetooth-classic",
+      {
+        peripheralUsageDescription: "السماح لتطبيق صيدليتي بالبحث عن طابعة Bluetooth والاتصال بها.",
+        alwaysUsageDescription: "السماح لتطبيق صيدليتي بالاتصال بطابعة Bluetooth المحفوظة.",
+        protocols: [],
+      },
+    ],
     "expo-sqlite",
     [
       "expo-image-picker",
