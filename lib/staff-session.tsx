@@ -1,11 +1,18 @@
 import * as Device from "expo-device";
 import Constants from "expo-constants";
+import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import * as Auth from "@/lib/_core/auth";
 import { trpc } from "@/lib/trpc";
 import type { StaffPermission } from "@/lib/staff-access";
+
+if (Platform.OS !== "web") {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: true }),
+  });
+}
 
 type StaffUser = {
   userId: number;
@@ -25,6 +32,7 @@ type StaffSessionValue = {
   login: (credentials: Credentials) => Promise<void>;
   bootstrap: (credentials: Required<Credentials>) => Promise<void>;
   logout: () => Promise<void>;
+  enablePhoneNotifications: () => Promise<string>;
   refresh: () => Promise<void>;
 };
 
@@ -35,6 +43,8 @@ export async function getStaffDevice() {
   return {
     deviceName: Device.deviceName ?? (Platform.OS === "web" ? "متصفح الويب" : "هاتف غير معروف"),
     devicePlatform: Platform.OS,
+    deviceModel: Device.modelName ?? undefined,
+    osVersion: Device.osVersion ?? undefined,
     appVersion: Constants.expoConfig?.version ?? undefined,
     userAgent: browserAgent,
   };
@@ -48,12 +58,19 @@ export function StaffSessionProvider({ children }: { children: ReactNode }) {
   const loginMutation = trpc.staff.login.useMutation();
   const bootstrapMutation = trpc.staff.bootstrap.useMutation();
   const logoutMutation = trpc.staff.logout.useMutation();
+  const registerPushDevice = trpc.staff.registerPushDevice.useMutation();
 
   useEffect(() => { Auth.getSessionToken().finally(() => setTokenReady(true)); }, []);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => { if (state === "active" && tokenReady) void me.refetch(); });
     return () => subscription.remove();
   }, [me, tokenReady]);
+  useEffect(() => {
+    if (!me.data || Platform.OS === "web") return;
+    const received = Notifications.addNotificationReceivedListener(() => { void utils.staff.notifications.invalidate(); });
+    const opened = Notifications.addNotificationResponseReceivedListener(() => { void utils.staff.notifications.invalidate(); });
+    return () => { received.remove(); opened.remove(); };
+  }, [me.data, utils.staff.notifications]);
 
   const establish = useCallback(async (result: { token: string; profile: StaffUser }) => {
     await Auth.setSessionToken(result.token);
@@ -84,6 +101,24 @@ export function StaffSessionProvider({ children }: { children: ReactNode }) {
     await me.refetch();
   }, [logoutMutation, me, utils]);
 
+  const enablePhoneNotifications = useCallback(async () => {
+    if (Platform.OS === "web") throw new Error("إشعارات الهاتف لا تُفعّل من معاينة الويب. استخدم بناء Android أو iOS على جهاز فعلي.");
+    if (!Device.isDevice) throw new Error("فعّل الإشعارات من هاتف فعلي أو محاكي يدعم خدمات Google Play.");
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("default", { name: "إشعارات صيدليتي", importance: Notifications.AndroidImportance.MAX, vibrationPattern: [0, 250, 250, 250], lightColor: "#22A67A" });
+    }
+    const existing = await Notifications.getPermissionsAsync();
+    const permission = existing.status === "granted" ? existing : await Notifications.requestPermissionsAsync();
+    if (permission.status !== "granted") throw new Error("لم يتم منح إذن إشعارات الهاتف. يمكنك تفعيله لاحقًا من إعدادات الهاتف.");
+    const projectId = Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
+    if (!projectId) throw new Error("يلزم بناء تطوير مرتبط بمشروع Expo لتفعيل إشعارات الهاتف.");
+    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    const device = await getStaffDevice();
+    await registerPushDevice.mutateAsync({ ...device, expoPushToken: token, permissionStatus: "granted" });
+    await utils.staff.pushStatus.invalidate();
+    return "تم تفعيل إشعارات الهاتف لهذا الجهاز.";
+  }, [registerPushDevice, utils.staff.pushStatus]);
+
   const value = useMemo<StaffSessionValue>(() => ({
     configured: status.data?.configured,
     ready: tokenReady && !status.isLoading && !me.isLoading,
@@ -92,8 +127,9 @@ export function StaffSessionProvider({ children }: { children: ReactNode }) {
     login,
     bootstrap,
     logout,
+    enablePhoneNotifications,
     refresh: async () => { await Promise.all([status.refetch(), me.refetch()]); },
-  }), [bootstrap, login, me.data, me.isLoading, status, tokenReady, logout]);
+  }), [bootstrap, enablePhoneNotifications, login, me.data, me.isLoading, status, tokenReady, logout]);
 
   return <StaffSessionContext.Provider value={value}>{children}</StaffSessionContext.Provider>;
 }

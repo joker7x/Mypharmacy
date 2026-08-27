@@ -22,7 +22,7 @@ const finance: Destination[] = [
 ];
 const management: Destination[] = [
   { title: "التقارير التشغيلية", subtitle: "المبيعات وحركة الأصناف", icon: "chart.line.uptrend.xyaxis", path: "/reports", permission: "reports.view" },
-  { title: "الطابعة والملصقات", subtitle: "ربط Xprinter وضبط الإيصالات والباركود", icon: "printer.fill", path: "/settings", permission: "inventory.adjust" },
+  { title: "الطابعة والملصقات", subtitle: "ربط Xprinter وضبط الإيصالات والباركود", icon: "printer.fill", path: "/tools", permission: "inventory.adjust" },
   { title: "إعدادات الصيدلية", subtitle: "إدارة البيانات وإعدادات التطبيق", icon: "gearshape.fill", path: "/settings", permission: "staff.manage" },
 ];
 

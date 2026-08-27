@@ -2,7 +2,8 @@ import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:cry
 import { promisify } from "node:util";
 import { and, desc, eq, gt, inArray, isNull, or } from "drizzle-orm";
 
-import { staffAuditLogs, staffNotifications, staffProfiles, staffSessions, users } from "../drizzle/schema";
+import { staffAuditLogs, staffNotifications, staffProfiles, staffPushDeliveries, staffPushDevices, staffSessions, users } from "../drizzle/schema";
+import { chunkPushMessages, isExpoPushToken, type ExpoPushMessage } from "../lib/expo-push";
 import { normalizePermissions, permissionsForRole, type StaffPermission, type StaffRole, type StaffStatus } from "../lib/staff-access";
 import { getDb } from "./db";
 
@@ -12,6 +13,8 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 export type DeviceContext = {
   deviceName?: string;
   devicePlatform?: string;
+  deviceModel?: string;
+  osVersion?: string;
   appVersion?: string;
   userAgent?: string;
   networkAddress?: string | null;
@@ -144,7 +147,7 @@ export async function authenticateStaff(usernameInput: string, password: string)
 export async function createStaffSession(userId: number, device: DeviceContext) {
   const db = requireDb(await getDb());
   const id = newSessionId();
-  await db.insert(staffSessions).values({ id, userId, deviceName: safeDeviceName(device.deviceName), devicePlatform: safePlatform(device.devicePlatform), appVersion: device.appVersion?.slice(0, 64) ?? null, userAgent: device.userAgent?.slice(0, 512) ?? null, networkAddress: maskNetworkAddress(device.networkAddress), lastActiveAt: new Date() });
+  await db.insert(staffSessions).values({ id, userId, deviceName: safeDeviceName(device.deviceName), devicePlatform: safePlatform(device.devicePlatform), deviceModel: device.deviceModel?.slice(0, 128) ?? null, osVersion: device.osVersion?.slice(0, 64) ?? null, appVersion: device.appVersion?.slice(0, 64) ?? null, userAgent: device.userAgent?.slice(0, 512) ?? null, networkAddress: maskNetworkAddress(device.networkAddress), lastActiveAt: new Date() });
   return { id, expiresAt: new Date(Date.now() + SESSION_TTL_MS) };
 }
 
@@ -204,9 +207,85 @@ export async function createNotifications(input: { senderId: number; title: stri
   else if (input.target.type === "role" && input.target.role) recipients = await db.select({ userId: staffProfiles.userId }).from(staffProfiles).where(and(activeFilter, eq(staffProfiles.role, input.target.role)));
   else recipients = await db.select({ userId: staffProfiles.userId }).from(staffProfiles).where(activeFilter);
   if (!recipients.length) throw new Error("لا يوجد مستخدمون نشطون لاستلام الإشعار.");
-  await db.insert(staffNotifications).values(recipients.map((recipient) => ({ recipientUserId: recipient.userId, sentByUserId: input.senderId, title: input.title.trim(), body: input.body.trim(), route: input.route?.trim() || null })));
+  const created = [] as Array<{ id: number; userId: number }>;
+  for (const recipient of recipients) {
+    const result = await db.insert(staffNotifications).values({ recipientUserId: recipient.userId, sentByUserId: input.senderId, title: input.title.trim(), body: input.body.trim(), route: input.route?.trim() || null });
+    created.push({ id: Number(result[0].insertId), userId: recipient.userId });
+  }
   await recordAudit({ actorUserId: input.senderId, action: "notification.sent", entityType: "notification", detail: `تم إرسال إشعار إلى ${recipients.length} مستخدم/مستخدمين.`, metadata: { target: input.target.type, recipients: recipients.length } });
-  return { recipients: recipients.length };
+  return { recipients: recipients.length, notifications: created };
+}
+
+export type PushRegistration = DeviceContext & { expoPushToken: string; permissionStatus: "granted" | "denied" | "undetermined" };
+
+export async function registerPushDevice(userId: number, input: PushRegistration) {
+  const db = requireDb(await getDb());
+  if (!isExpoPushToken(input.expoPushToken)) throw new Error("رمز إشعار الهاتف غير صالح.");
+  const now = new Date();
+  await db.insert(staffPushDevices).values({
+    userId,
+    expoPushToken: input.expoPushToken,
+    deviceName: safeDeviceName(input.deviceName),
+    devicePlatform: safePlatform(input.devicePlatform),
+    deviceModel: input.deviceModel?.slice(0, 128) ?? null,
+    osVersion: input.osVersion?.slice(0, 64) ?? null,
+    appVersion: input.appVersion?.slice(0, 64) ?? null,
+    permissionStatus: input.permissionStatus,
+    isEnabled: input.permissionStatus === "granted",
+    lastRegisteredAt: now,
+    invalidatedAt: null,
+  }).onDuplicateKeyUpdate({ set: {
+    userId, deviceName: safeDeviceName(input.deviceName), devicePlatform: safePlatform(input.devicePlatform), deviceModel: input.deviceModel?.slice(0, 128) ?? null, osVersion: input.osVersion?.slice(0, 64) ?? null, appVersion: input.appVersion?.slice(0, 64) ?? null, permissionStatus: input.permissionStatus, isEnabled: input.permissionStatus === "granted", lastRegisteredAt: now, invalidatedAt: null,
+  } });
+  await recordAudit({ actorUserId: userId, action: "push.registered", entityType: "push_device", detail: `تم تفعيل إشعارات الهاتف على ${safeDeviceName(input.deviceName)}.`, metadata: { platform: input.devicePlatform, model: input.deviceModel } });
+  return getPushStatus(userId);
+}
+
+export async function getPushStatus(userId: number) {
+  const db = requireDb(await getDb());
+  const rows = await db.select().from(staffPushDevices).where(eq(staffPushDevices.userId, userId)).orderBy(desc(staffPushDevices.lastRegisteredAt));
+  return {
+    enabledDevices: rows.filter((row) => row.isEnabled && row.permissionStatus === "granted" && !row.invalidatedAt).length,
+    devices: rows.map((row) => ({ id: row.id, deviceName: row.deviceName, devicePlatform: row.devicePlatform, deviceModel: row.deviceModel, osVersion: row.osVersion, appVersion: row.appVersion, permissionStatus: row.permissionStatus, isEnabled: row.isEnabled, lastRegisteredAt: row.lastRegisteredAt, lastDeliveredAt: row.lastDeliveredAt })),
+  };
+}
+
+export async function listPushDevices() {
+  const db = requireDb(await getDb());
+  const rows = await db.select({ device: staffPushDevices, profile: staffProfiles }).from(staffPushDevices).innerJoin(staffProfiles, eq(staffPushDevices.userId, staffProfiles.userId)).orderBy(desc(staffPushDevices.lastRegisteredAt));
+  return rows.map(({ device, profile }) => ({ ...device, displayName: profile.displayName, username: profile.username }));
+}
+
+export async function deliverPushNotifications(input: { senderId: number; title: string; body: string; route?: string | null; notifications: Array<{ id: number; userId: number }> }) {
+  const db = requireDb(await getDb());
+  if (!input.notifications.length) return { attempted: 0, accepted: 0, failed: 0 };
+  const recipientIds = [...new Set(input.notifications.map((item) => item.userId))];
+  const devices = await db.select().from(staffPushDevices).where(and(inArray(staffPushDevices.userId, recipientIds), eq(staffPushDevices.isEnabled, true), eq(staffPushDevices.permissionStatus, "granted"), isNull(staffPushDevices.invalidatedAt)));
+  const notificationForUser = new Map(input.notifications.map((item) => [item.userId, item.id]));
+  const targets = devices.filter((device) => isExpoPushToken(device.expoPushToken)).map((device) => ({ device, notificationId: notificationForUser.get(device.userId)! }));
+  if (!targets.length) return { attempted: 0, accepted: 0, failed: 0 };
+  let accepted = 0;
+  let failed = 0;
+  for (const chunk of chunkPushMessages(targets, 100)) {
+    const messages: ExpoPushMessage[] = chunk.map(({ device }) => ({ to: device.expoPushToken, title: input.title, body: input.body, sound: "default", priority: "high", data: input.route ? { route: input.route } : undefined }));
+    try {
+      const response = await fetch("https://exp.host/--/api/v2/push/send", { method: "POST", headers: { Accept: "application/json", "Accept-Encoding": "gzip, deflate", "Content-Type": "application/json" }, body: JSON.stringify(messages) });
+      const payload = await response.json().catch(() => ({})) as { data?: Array<{ status?: string; id?: string; message?: string; details?: { error?: string } }> };
+      for (const [index, target] of chunk.entries()) {
+        const ticket = payload.data?.[index];
+        const ok = response.ok && ticket?.status === "ok";
+        if (ok) { accepted += 1; await db.update(staffPushDevices).set({ lastDeliveredAt: new Date() }).where(eq(staffPushDevices.id, target.device.id)); }
+        else { failed += 1; if (ticket?.details?.error === "DeviceNotRegistered") await db.update(staffPushDevices).set({ isEnabled: false, invalidatedAt: new Date() }).where(eq(staffPushDevices.id, target.device.id)); }
+        await db.insert(staffPushDeliveries).values({ notificationId: target.notificationId, pushDeviceId: target.device.id, recipientUserId: target.device.userId, status: ok ? "accepted" : "failed", ticketId: ticket?.id ?? null, errorMessage: ok ? null : (ticket?.message ?? `تعذر إرسال الطلب (${response.status}).`).slice(0, 500) });
+      }
+    } catch (error) {
+      failed += chunk.length;
+      const message = error instanceof Error ? error.message.slice(0, 500) : "تعذر الاتصال بخدمة الإشعارات.";
+      await db.insert(staffPushDeliveries).values(chunk.map(({ device, notificationId }) => ({ notificationId, pushDeviceId: device.id, recipientUserId: device.userId, status: "failed" as const, errorMessage: message })));
+    }
+  }
+  await recordAudit({ actorUserId: input.senderId, action: "push.sent", entityType: "push_notification", detail: `تم طلب إرسال إشعار هاتفي إلى ${targets.length} جهاز/أجهزة.`, metadata: { accepted, failed, devices: targets.length } });
+  return { attempted: targets.length, accepted, failed };
 }
 
 export async function listNotifications(userId: number) {

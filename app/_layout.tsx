@@ -142,6 +142,7 @@ function RootNavigator() {
   return <Stack screenOptions={{ headerShown: false }}>
     <Stack.Screen name="(tabs)" />
     <Stack.Screen name="login" options={{ presentation: "fullScreenModal" }} />
+    <Stack.Screen name="tools" />
     <Stack.Screen name="staff-admin" />
     <Stack.Screen name="notifications" />
     <Stack.Screen name="oauth/callback" />

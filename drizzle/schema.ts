@@ -44,6 +44,8 @@ export const staffSessions = mysqlTable("staff_sessions", {
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
   deviceName: varchar("deviceName", { length: 255 }).notNull(),
   devicePlatform: varchar("devicePlatform", { length: 64 }).notNull(),
+  deviceModel: varchar("deviceModel", { length: 128 }),
+  osVersion: varchar("osVersion", { length: 64 }),
   appVersion: varchar("appVersion", { length: 64 }),
   userAgent: varchar("userAgent", { length: 512 }),
   networkAddress: varchar("networkAddress", { length: 96 }),
@@ -51,6 +53,25 @@ export const staffSessions = mysqlTable("staff_sessions", {
   signedOutAt: timestamp("signedOutAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [index("staff_sessions_user_idx").on(table.userId), index("staff_sessions_last_active_idx").on(table.lastActiveAt)]);
+
+/** الأجهزة التي منحت إذن إشعارات الهاتف؛ لا يخزّن النظام معرّفًا دائمًا للجهاز. */
+export const staffPushDevices = mysqlTable("staff_push_devices", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expoPushToken: varchar("expoPushToken", { length: 255 }).notNull().unique(),
+  deviceName: varchar("deviceName", { length: 255 }).notNull(),
+  devicePlatform: varchar("devicePlatform", { length: 64 }).notNull(),
+  deviceModel: varchar("deviceModel", { length: 128 }),
+  osVersion: varchar("osVersion", { length: 64 }),
+  appVersion: varchar("appVersion", { length: 64 }),
+  permissionStatus: mysqlEnum("permissionStatus", ["granted", "denied", "undetermined"]).notNull().default("undetermined"),
+  isEnabled: boolean("isEnabled").notNull().default(true),
+  lastRegisteredAt: timestamp("lastRegisteredAt").defaultNow().notNull(),
+  lastDeliveredAt: timestamp("lastDeliveredAt"),
+  invalidatedAt: timestamp("invalidatedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [index("staff_push_user_idx").on(table.userId), index("staff_push_enabled_idx").on(table.isEnabled)]);
 
 export const staffAuditLogs = mysqlTable("staff_audit_logs", {
   id: int("id").autoincrement().primaryKey(),
@@ -75,6 +96,18 @@ export const staffNotifications = mysqlTable("staff_notifications", {
   readAt: timestamp("readAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [index("staff_notifications_recipient_idx").on(table.recipientUserId), index("staff_notifications_created_idx").on(table.createdAt)]);
+
+/** حالة تسليم كل إشعار هاتفي، حتى تميّز لوحة المسؤول بين الصندوق الداخلي وطلب Push. */
+export const staffPushDeliveries = mysqlTable("staff_push_deliveries", {
+  id: int("id").autoincrement().primaryKey(),
+  notificationId: int("notificationId").references(() => staffNotifications.id, { onDelete: "set null" }),
+  pushDeviceId: int("pushDeviceId").references(() => staffPushDevices.id, { onDelete: "set null" }),
+  recipientUserId: int("recipientUserId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: mysqlEnum("status", ["accepted", "failed", "skipped"]).notNull().default("skipped"),
+  ticketId: varchar("ticketId", { length: 128 }),
+  errorMessage: varchar("errorMessage", { length: 500 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [index("staff_push_delivery_recipient_idx").on(table.recipientUserId), index("staff_push_delivery_notification_idx").on(table.notificationId)]);
 
 export type StaffProfile = typeof staffProfiles.$inferSelect;
 export type InsertStaffProfile = typeof staffProfiles.$inferInsert;

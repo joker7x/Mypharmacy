@@ -18,12 +18,15 @@ const credentialSchema = z.object({
   password: z.string().min(8, "كلمة المرور لا تقل عن 8 أحرف.").max(128),
   displayName: z.string().trim().min(2).max(160),
 });
-const deviceSchema = z.object({
+const rawDeviceSchema = z.object({
   deviceName: z.string().trim().max(255).optional(),
   devicePlatform: z.string().trim().max(64).optional(),
+  deviceModel: z.string().trim().max(128).optional(),
+  osVersion: z.string().trim().max(64).optional(),
   appVersion: z.string().trim().max(64).optional(),
   userAgent: z.string().trim().max(512).optional(),
-}).default({});
+});
+const deviceSchema = rawDeviceSchema.default({});
 
 type DeviceInput = z.infer<typeof deviceSchema>;
 type RequestWithHeaders = { headers: Record<string, string | string[] | undefined> };
@@ -97,10 +100,15 @@ export const appRouter = router({
     }),
     notifications: staffProcedure.query(({ ctx }) => staff.listNotifications(ctx.user!.id)),
     markNotificationRead: staffProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ input, ctx }) => staff.markNotificationRead(ctx.user!.id, input.id)),
+    pushStatus: staffProcedure.query(({ ctx }) => staff.getPushStatus(ctx.user!.id)),
+    registerPushDevice: staffProcedure.input(rawDeviceSchema.extend({ expoPushToken: z.string().trim().min(10).max(255), permissionStatus: z.enum(["granted", "denied", "undetermined"]) })).mutation(({ input, ctx }) => staff.registerPushDevice(ctx.user!.id, input)),
+    pushDevices: staffAdminProcedure.query(() => staff.listPushDevices()),
     sendNotification: staffProcedure.input(z.object({ title: z.string().trim().min(2).max(120), body: z.string().trim().min(2).max(500), route: z.string().trim().max(255).optional(), target: z.object({ type: z.enum(["all", "role", "user"]), role: roleSchema.optional(), userId: z.number().int().positive().optional() }) })).mutation(async ({ input, ctx }) => {
       const profile = await staff.getProfileByUserId(ctx.user!.id);
       if (!profile?.permissions.includes("notifications.send")) throw new Error("لا تملك صلاحية إرسال الإشعارات.");
-      return staff.createNotifications({ senderId: ctx.user!.id, ...input, target: { ...input.target, role: input.target.role as StaffRole | undefined } });
+      const created = await staff.createNotifications({ senderId: ctx.user!.id, ...input, target: { ...input.target, role: input.target.role as StaffRole | undefined } });
+      const push = await staff.deliverPushNotifications({ senderId: ctx.user!.id, title: input.title, body: input.body, route: input.route, notifications: created.notifications });
+      return { recipients: created.recipients, push };
     }),
   }),
   catalog: router({
