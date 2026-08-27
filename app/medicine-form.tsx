@@ -1,5 +1,5 @@
-import { router, useLocalSearchParams } from "expo-router";
 import { useDeferredValue, useEffect, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { BarcodeScanner } from "@/components/barcode-scanner";
@@ -22,21 +22,26 @@ export default function MedicineFormScreen() {
   const [catalogSearch, setCatalogSearch] = useState(typeof initialCatalogId === "string" ? initialCatalogId : "");
   const [scannerOpen, setScannerOpen] = useState(false);
   const deferredSearch = useDeferredValue(catalogSearch.trim());
-  const catalogQuery = trpc.catalog.search.useQuery({ query: deferredSearch.length >= 2 ? deferredSearch : "xx", limit: 12, offset: 0 }, { enabled: deferredSearch.length >= 2, staleTime: 120_000 });
+  const catalogQuery = trpc.catalog.search.useQuery({ query: deferredSearch.length >= 2 ? deferredSearch : "xx", limit: 12, offset: 0 }, { enabled: !existing && !form.catalogId && deferredSearch.length >= 2, staleTime: 120_000 });
   const directProductQuery = trpc.catalog.product.useQuery({ externalId: typeof initialCatalogId === "string" ? initialCatalogId : "x" }, { enabled: Boolean(initialCatalogId) && !existing });
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) => setForm((current) => ({ ...current, [field]: value }));
   const sellableUnits = packages * getUnitsPerPackage(form);
   const pricePerUnit = getUnitPrice(form);
+  const isLockedCatalogAddition = !existing && Boolean(form.catalogId);
 
   const selectCatalogProduct = (product: CatalogProduct) => {
-    setForm((current) => ({ ...current, catalogId: product.externalId, name: product.arabicName || product.name, category: product.category || "أخرى", sku: product.barcode || product.externalId, barcode: product.barcode || "", price: Number(product.currentPrice) || 0, unitsPerPackage: Math.max(1, product.unitsPerPackage || 1) }));
+    setForm({ catalogId: product.externalId, name: product.arabicName || product.name, category: product.category || "أخرى", sku: product.barcode || product.externalId, barcode: product.barcode || "", price: Number(product.currentPrice) || 0, unitsPerPackage: Math.max(1, product.unitsPerPackage || 1), reorderLevel: 5, expiryDate: "" });
     setCatalogSearch("");
   };
 
-  useEffect(() => { if (directProductQuery.data) selectCatalogProduct(directProductQuery.data as CatalogProduct); }, [directProductQuery.data]);
+  useEffect(() => {
+    if (directProductQuery.data && !form.catalogId) selectCatalogProduct(directProductQuery.data as CatalogProduct);
+  }, [directProductQuery.data, form.catalogId]);
 
   const save = () => {
-    if (!form.name.trim() || !form.category.trim() || !form.sku.trim() || !form.expiryDate.trim() || form.price < 0 || packages < 0 || form.reorderLevel < 0) return Alert.alert("بيانات غير مكتملة", "اختر دواءً أو أدخل بياناته، ثم أضف عدد العبوات وتاريخ الصلاحية.");
+    if (!form.name.trim() || !form.category.trim() || !form.sku.trim() || !form.expiryDate.trim() || form.price < 0 || packages < 0 || form.reorderLevel < 0) {
+      return Alert.alert("بيانات غير مكتملة", "اختر دواءً من الدليل ثم أدخل كمية المخزون وتاريخ الصلاحية.");
+    }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(form.expiryDate)) return Alert.alert("تاريخ غير صحيح", "استخدم الصيغة YYYY-MM-DD مثل 2027-05-20.");
     const medication = { ...form, quantity: sellableUnits };
     if (existing) updateMedication(existing.id, medication); else addMedication(medication);
@@ -48,11 +53,123 @@ export default function MedicineFormScreen() {
     Alert.alert("حذف الصنف", `هل تريد حذف «${existing.name}» من المخزون؟`, [{ text: "إلغاء", style: "cancel" }, { text: "حذف", style: "destructive", onPress: () => { deleteMedication(existing.id); router.back(); } }]);
   };
 
-  return <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-background" className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content} keyboardShouldPersistTaps="handled"><TouchableOpacity onPress={() => router.back()} style={styles.back} activeOpacity={0.75}><IconSymbol name="chevron.right" size={20} color={COLORS.ink} /><Text style={styles.backText}>رجوع</Text></TouchableOpacity><PageHeader title={existing ? "تعديل صنف" : "إضافة للمخزون"} subtitle="اختر من دليل الأدوية أو أدخل البيانات يدويًا" />
-    {!existing ? <View style={styles.catalogCard}><View style={styles.catalogTitleRow}><TouchableOpacity onPress={() => setScannerOpen(true)} style={styles.scanButton} activeOpacity={0.8}><IconSymbol name="barcode.viewfinder" size={20} color={COLORS.primary} /><Text style={styles.scanText}>مسح</Text></TouchableOpacity><View style={styles.catalogTitle}><Text style={styles.catalogHeading}>اختر الدواء من الدليل</Text><Text style={styles.catalogSubheading}>الاسم أو الباركود يملآن السعر والوحدات تلقائيًا</Text></View></View><View style={styles.catalogSearch}><IconSymbol name="magnifyingglass" size={19} color={COLORS.muted} /><TextInput value={catalogSearch} onChangeText={setCatalogSearch} placeholder="اسم الدواء أو الباركود" placeholderTextColor="#96A5A2" style={styles.catalogSearchInput} /></View>{catalogQuery.isFetching ? <ActivityIndicator color={COLORS.primary} style={styles.loading} /> : catalogQuery.data?.items.map((product) => <TouchableOpacity key={product.externalId} onPress={() => selectCatalogProduct(product as CatalogProduct)} style={styles.catalogResult} activeOpacity={0.75}><View style={styles.catalogResultText}><Text style={styles.catalogResultName}>{product.arabicName}</Text><Text style={styles.catalogResultMeta}>{product.company || "دليل الأدوية"} · {product.unitsPerPackage || 1} وحدة/عبوة · {Number(product.currentPrice).toLocaleString("ar-EG")} ج.م</Text></View><IconSymbol name="plus.circle.fill" size={23} color={COLORS.primary} /></TouchableOpacity>)}</View> : null}
-    <View style={styles.formCard}><Field label="اسم الدواء" value={form.name} onChangeText={(value) => setField("name", value)} placeholder="مثال: بانادول إكسترا" /><Field label="الفئة" value={form.category} onChangeText={(value) => setField("category", value)} placeholder="مثال: مسكنات" /><View style={styles.twoColumns}><View style={styles.halfField}><Field label="الباركود / كود الصنف" value={form.barcode || form.sku} onChangeText={(value) => { setField("barcode", value); setField("sku", value); }} placeholder="امسح أو أدخل الباركود" writingDirection="ltr" /></View><View style={styles.halfField}><Field label="سعر العبوة" value={String(form.price || "")} onChangeText={(value) => setField("price", Number(value.replace(/[^0-9.]/g, "")) || 0)} placeholder="0" keyboardType="decimal-pad" writingDirection="ltr" /></View></View><View style={styles.twoColumns}><View style={styles.halfField}><Field label="عدد العبوات الواردة" value={String(packages || "")} onChangeText={(value) => setPackages(Number(value.replace(/[^0-9]/g, "")) || 0)} placeholder="0" keyboardType="number-pad" writingDirection="ltr" /></View><View style={styles.halfField}><Field label="وحدات البيع بالعبوة" value={String(getUnitsPerPackage(form))} onChangeText={(value) => setField("unitsPerPackage", Math.max(1, Number(value.replace(/[^0-9]/g, "")) || 1))} placeholder="1" keyboardType="number-pad" writingDirection="ltr" /></View></View><View style={styles.unitSummary}><Text style={styles.unitSummaryText}>{sellableUnits.toLocaleString("ar-EG")} وحدة متاحة · سعر الوحدة {pricePerUnit.toLocaleString("ar-EG", { maximumFractionDigits: 2 })} ج.م</Text></View><View style={styles.twoColumns}><View style={styles.halfField}><Field label="حد إعادة الطلب (وحدة)" value={String(form.reorderLevel || "")} onChangeText={(value) => setField("reorderLevel", Number(value.replace(/[^0-9]/g, "")) || 0)} placeholder="5" keyboardType="number-pad" writingDirection="ltr" /></View><View style={styles.halfField}><Field label="تاريخ الانتهاء" value={form.expiryDate} onChangeText={(value) => setField("expiryDate", value)} placeholder="YYYY-MM-DD" writingDirection="ltr" /></View></View></View><TouchableOpacity onPress={save} style={commonStyles.primaryButton} activeOpacity={0.85}><IconSymbol name="checkmark.circle.fill" size={20} color="#FFFFFF" /><Text style={commonStyles.primaryButtonText}>{existing ? "حفظ التعديلات" : "إضافة إلى المخزون"}</Text></TouchableOpacity>{existing ? <TouchableOpacity onPress={remove} style={styles.deleteButton} activeOpacity={0.8}><IconSymbol name="trash" size={18} color={COLORS.danger} /><Text style={styles.deleteText}>حذف الصنف</Text></TouchableOpacity> : null}</ScrollView><BarcodeScanner visible={scannerOpen} onClose={() => setScannerOpen(false)} onScanned={setCatalogSearch} /></ScreenContainer>;
+  return (
+    <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-background" className="flex-1">
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={commonStyles.content} keyboardShouldPersistTaps="handled">
+        <TouchableOpacity onPress={() => router.back()} style={styles.back} activeOpacity={0.75}>
+          <IconSymbol name="chevron.right" size={20} color={COLORS.ink} />
+          <Text style={styles.backText}>رجوع</Text>
+        </TouchableOpacity>
+        <PageHeader title={existing ? "تعديل صنف" : "إضافة للمخزون"} subtitle={existing ? "يمكنك تحديث بيانات الصنف المسجل" : isLockedCatalogAddition ? "بيانات الدواء مؤكدة من الدليل" : "اختر الدواء من دليل الأدوية أولًا"} />
+
+        {!existing && !isLockedCatalogAddition ? (
+          <View style={styles.catalogCard}>
+            <View style={styles.catalogTitleRow}>
+              <TouchableOpacity onPress={() => setScannerOpen(true)} style={styles.scanButton} activeOpacity={0.8}>
+                <IconSymbol name="barcode.viewfinder" size={20} color={COLORS.primary} />
+                <Text style={styles.scanText}>مسح</Text>
+              </TouchableOpacity>
+              <View style={styles.catalogTitle}>
+                <Text style={styles.catalogHeading}>اختر الدواء من الدليل</Text>
+                <Text style={styles.catalogSubheading}>تُجلب البيانات المعتمدة تلقائيًا ولا يمكن تعديلها</Text>
+              </View>
+            </View>
+            <View style={styles.catalogSearch}>
+              <IconSymbol name="magnifyingglass" size={19} color={COLORS.muted} />
+              <TextInput value={catalogSearch} onChangeText={setCatalogSearch} placeholder="اسم الدواء أو الباركود" placeholderTextColor="#96A5A2" style={styles.catalogSearchInput} returnKeyType="done" />
+            </View>
+            {catalogQuery.isFetching ? <ActivityIndicator color={COLORS.primary} style={styles.loading} /> : catalogQuery.data?.items.map((product) => (
+              <TouchableOpacity key={product.externalId} onPress={() => selectCatalogProduct(product as CatalogProduct)} style={styles.catalogResult} activeOpacity={0.75}>
+                <View style={styles.catalogResultText}>
+                  <Text style={styles.catalogResultName}>{product.arabicName}</Text>
+                  <Text style={styles.catalogResultMeta}>{product.company || "دليل الأدوية"} · {product.unitsPerPackage || 1} وحدة/عبوة · {Number(product.currentPrice).toLocaleString("ar-EG")} ج.م</Text>
+                </View>
+                <IconSymbol name="plus.circle.fill" size={23} color={COLORS.primary} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
+        {isLockedCatalogAddition ? (
+          <View style={styles.lockedCatalogCard}>
+            <View style={styles.lockedIcon}><IconSymbol name="checkmark.circle.fill" size={21} color={COLORS.primary} /></View>
+            <View style={styles.lockedCatalogText}>
+              <Text style={styles.lockedTitle} numberOfLines={1}>{form.name}</Text>
+              <Text style={styles.lockedMeta} numberOfLines={2}>{form.category} · {formatPrice(form.price)} · {getUnitsPerPackage(form)} وحدة/عبوة</Text>
+              <Text style={styles.lockedNote}>هذه البيانات واردة من الدليل ومقفلة عند الإضافة.</Text>
+            </View>
+          </View>
+        ) : null}
+
+        <View style={styles.formCard}>
+          {existing ? <EditableMedicationFields form={form} setField={setField} /> : null}
+          <View style={styles.twoColumns}>
+            <View style={styles.halfField}>
+              <Field label="كمية المخزون (عبوات)" value={String(packages || "")} onChangeText={(value) => setPackages(Number(value.replace(/[^0-9]/g, "")) || 0)} placeholder="0" keyboardType="number-pad" writingDirection="ltr" />
+            </View>
+            {existing ? <View style={styles.halfField}><Field label="وحدات البيع بالعبوة" value={String(getUnitsPerPackage(form))} onChangeText={(value) => setField("unitsPerPackage", Math.max(1, Number(value.replace(/[^0-9]/g, "")) || 1))} placeholder="1" keyboardType="number-pad" writingDirection="ltr" /></View> : null}
+          </View>
+          <View style={isLockedCatalogAddition ? styles.singleField : styles.twoColumns}>
+            <View style={isLockedCatalogAddition ? undefined : styles.halfField}>
+              <Field label="تاريخ الصلاحية" value={form.expiryDate} onChangeText={(value) => setField("expiryDate", value)} placeholder="YYYY-MM-DD" writingDirection="ltr" />
+            </View>
+            {existing ? <View style={styles.halfField}><Field label="حد إعادة الطلب (وحدة)" value={String(form.reorderLevel || "")} onChangeText={(value) => setField("reorderLevel", Number(value.replace(/[^0-9]/g, "")) || 0)} placeholder="5" keyboardType="number-pad" writingDirection="ltr" /></View> : null}
+          </View>
+          <View style={styles.unitSummary}>
+            <Text style={styles.unitSummaryText}>{sellableUnits.toLocaleString("ar-EG")} وحدة متاحة · سعر الوحدة {pricePerUnit.toLocaleString("ar-EG", { maximumFractionDigits: 2 })} ج.م</Text>
+          </View>
+        </View>
+
+        <TouchableOpacity onPress={save} style={commonStyles.primaryButton} activeOpacity={0.85}>
+          <IconSymbol name="checkmark.circle.fill" size={20} color="#FFFFFF" />
+          <Text style={commonStyles.primaryButtonText}>{existing ? "حفظ التعديلات" : "إضافة إلى المخزون"}</Text>
+        </TouchableOpacity>
+        {existing ? <TouchableOpacity onPress={remove} style={styles.deleteButton} activeOpacity={0.8}><IconSymbol name="trash" size={18} color={COLORS.danger} /><Text style={styles.deleteText}>حذف الصنف</Text></TouchableOpacity> : null}
+      </ScrollView>
+      <BarcodeScanner visible={scannerOpen} onClose={() => setScannerOpen(false)} onScanned={setCatalogSearch} />
+    </ScreenContainer>
+  );
 }
 
-function Field({ label, value, onChangeText, placeholder, keyboardType, writingDirection = "rtl" }: { label: string; value: string; onChangeText: (value: string) => void; placeholder: string; keyboardType?: "default" | "decimal-pad" | "number-pad"; writingDirection?: "rtl" | "ltr" }) { return <View style={commonStyles.inputGroup}><Text style={commonStyles.inputLabel}>{label}</Text><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#98A7A3" keyboardType={keyboardType} returnKeyType="done" style={[commonStyles.input, { writingDirection, textAlign: writingDirection === "rtl" ? "right" : "left" }]} /></View>; }
+function EditableMedicationFields({ form, setField }: { form: FormState; setField: <K extends keyof FormState>(field: K, value: FormState[K]) => void }) {
+  return <><Field label="اسم الدواء" value={form.name} onChangeText={(value) => setField("name", value)} placeholder="مثال: بانادول إكسترا" /><Field label="الفئة" value={form.category} onChangeText={(value) => setField("category", value)} placeholder="مثال: مسكنات" /><View style={styles.twoColumns}><View style={styles.halfField}><Field label="الباركود / كود الصنف" value={form.barcode || form.sku} onChangeText={(value) => { setField("barcode", value); setField("sku", value); }} placeholder="امسح أو أدخل الباركود" writingDirection="ltr" /></View><View style={styles.halfField}><Field label="سعر العبوة" value={String(form.price || "")} onChangeText={(value) => setField("price", Number(value.replace(/[^0-9.]/g, "")) || 0)} placeholder="0" keyboardType="decimal-pad" writingDirection="ltr" /></View></View></>;
+}
 
-const styles = StyleSheet.create({ back: { alignSelf: "flex-end", flexDirection: "row-reverse", alignItems: "center", gap: 3, marginBottom: 17, padding: 4 }, backText: { color: COLORS.ink, fontSize: 13, fontWeight: "800" }, catalogCard: { backgroundColor: "#F2FBF8", borderRadius: 20, borderWidth: 1, borderColor: "#CDEAE2", padding: 14, marginBottom: 14 }, catalogTitleRow: { flexDirection: "row-reverse", alignItems: "center", gap: 11 }, catalogTitle: { flex: 1, alignItems: "flex-end" }, catalogHeading: { color: COLORS.ink, fontSize: 14, fontWeight: "900", textAlign: "right" }, catalogSubheading: { color: COLORS.muted, fontSize: 10, marginTop: 3, textAlign: "right" }, scanButton: { flexDirection: "row-reverse", alignItems: "center", gap: 3, minHeight: 36, backgroundColor: COLORS.mint, paddingHorizontal: 11, borderRadius: 11 }, scanText: { color: COLORS.primary, fontSize: 11, fontWeight: "900" }, catalogSearch: { height: 46, marginTop: 12, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#CDEAE2", borderRadius: 13, flexDirection: "row-reverse", alignItems: "center", paddingHorizontal: 12, gap: 8 }, catalogSearchInput: { flex: 1, color: COLORS.ink, fontSize: 13, textAlign: "right", writingDirection: "rtl" }, loading: { marginTop: 12 }, catalogResult: { flexDirection: "row-reverse", alignItems: "center", gap: 9, paddingVertical: 11, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#CDEAE2" }, catalogResultText: { flex: 1, alignItems: "flex-end" }, catalogResultName: { color: COLORS.ink, fontSize: 12, fontWeight: "900", textAlign: "right" }, catalogResultMeta: { color: COLORS.muted, fontSize: 9, marginTop: 3, textAlign: "right" }, formCard: { backgroundColor: COLORS.surface, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, padding: 16, marginBottom: 18 }, twoColumns: { flexDirection: "row-reverse", gap: 10 }, halfField: { flex: 1 }, unitSummary: { padding: 11, backgroundColor: COLORS.mint, borderRadius: 12, marginBottom: 15 }, unitSummaryText: { color: COLORS.primary, fontSize: 11, fontWeight: "900", textAlign: "right" }, deleteButton: { minHeight: 46, flexDirection: "row-reverse", gap: 7, alignItems: "center", justifyContent: "center", marginTop: 15 }, deleteText: { color: COLORS.danger, fontSize: 13, fontWeight: "800" } });
+function Field({ label, value, onChangeText, placeholder, keyboardType, writingDirection = "rtl" }: { label: string; value: string; onChangeText: (value: string) => void; placeholder: string; keyboardType?: "default" | "decimal-pad" | "number-pad"; writingDirection?: "rtl" | "ltr" }) {
+  return <View style={commonStyles.inputGroup}><Text style={commonStyles.inputLabel}>{label}</Text><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#98A7A3" keyboardType={keyboardType} returnKeyType="done" style={[commonStyles.input, { writingDirection, textAlign: writingDirection === "rtl" ? "right" : "left" }]} /></View>;
+}
+
+function formatPrice(price: number) { return `${price.toLocaleString("ar-EG")} ج.م`; }
+
+const styles = StyleSheet.create({
+  back: { alignSelf: "flex-end", flexDirection: "row-reverse", alignItems: "center", gap: 3, marginBottom: 17, padding: 4 },
+  backText: { color: COLORS.ink, fontSize: 13, fontWeight: "800" },
+  catalogCard: { backgroundColor: "#F2FBF8", borderRadius: 20, borderWidth: 1, borderColor: "#CDEAE2", padding: 14, marginBottom: 14 },
+  catalogTitleRow: { flexDirection: "row-reverse", alignItems: "center", gap: 11 },
+  catalogTitle: { flex: 1, alignItems: "flex-end" },
+  catalogHeading: { color: COLORS.ink, fontSize: 14, fontWeight: "900", textAlign: "right" },
+  catalogSubheading: { color: COLORS.muted, fontSize: 10, marginTop: 3, textAlign: "right" },
+  scanButton: { flexDirection: "row-reverse", alignItems: "center", gap: 3, minHeight: 36, backgroundColor: COLORS.mint, paddingHorizontal: 11, borderRadius: 11 },
+  scanText: { color: COLORS.primary, fontSize: 11, fontWeight: "900" },
+  catalogSearch: { height: 46, marginTop: 12, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#CDEAE2", borderRadius: 13, flexDirection: "row-reverse", alignItems: "center", paddingHorizontal: 12, gap: 8 },
+  catalogSearchInput: { flex: 1, color: COLORS.ink, fontSize: 13, textAlign: "right", writingDirection: "rtl" },
+  loading: { marginTop: 12 },
+  catalogResult: { flexDirection: "row-reverse", alignItems: "center", gap: 9, paddingVertical: 11, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#CDEAE2" },
+  catalogResultText: { flex: 1, alignItems: "flex-end" },
+  catalogResultName: { color: COLORS.ink, fontSize: 12, fontWeight: "900", textAlign: "right" },
+  catalogResultMeta: { color: COLORS.muted, fontSize: 9, marginTop: 3, textAlign: "right" },
+  lockedCatalogCard: { backgroundColor: "#F2FBF8", borderRadius: 18, borderWidth: 1, borderColor: "#CDEAE2", padding: 14, marginBottom: 14, flexDirection: "row-reverse", alignItems: "center", gap: 10 },
+  lockedIcon: { width: 35, height: 35, borderRadius: 11, backgroundColor: "#DDF4EC", alignItems: "center", justifyContent: "center" },
+  lockedCatalogText: { flex: 1, alignItems: "flex-end" },
+  lockedTitle: { width: "100%", color: COLORS.ink, fontSize: 14, fontWeight: "900", textAlign: "right" },
+  lockedMeta: { width: "100%", color: COLORS.muted, fontSize: 10, marginTop: 3, textAlign: "right" },
+  lockedNote: { width: "100%", color: COLORS.primary, fontSize: 10, fontWeight: "800", marginTop: 5, textAlign: "right" },
+  formCard: { backgroundColor: COLORS.surface, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, padding: 16, marginBottom: 18 },
+  twoColumns: { flexDirection: "row-reverse", gap: 10 },
+  halfField: { flex: 1 },
+  singleField: { width: "100%" },
+  unitSummary: { padding: 11, backgroundColor: COLORS.mint, borderRadius: 12, marginTop: 2 },
+  unitSummaryText: { color: COLORS.primary, fontSize: 11, fontWeight: "900", textAlign: "right" },
+  deleteButton: { minHeight: 46, flexDirection: "row-reverse", gap: 7, alignItems: "center", justifyContent: "center", marginTop: 15 },
+  deleteText: { color: COLORS.danger, fontSize: 13, fontWeight: "800" },
+});
