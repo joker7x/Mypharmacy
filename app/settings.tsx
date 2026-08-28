@@ -21,13 +21,13 @@ export default function SettingsScreen() {
     catch (error) { Alert.alert("تعذر تفعيل الإشعارات", error instanceof Error ? error.message : "حدث خطأ غير متوقع."); }
   };
   return <ScreenContainer className="flex-1"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-    <PageHeader title="الإعدادات" subtitle="حسابك وجهازك، مع وصول سريع إلى أدوات الصيدلية" />
+    <PageHeader title="الإعدادات" subtitle="الحساب والجهاز والإشعارات في مكان واحد" />
     <Text style={styles.section}>الحساب</Text>
     <View style={styles.profileCard}><View style={styles.avatar}><Text style={styles.avatarText}>{staff?.displayName?.slice(0, 1) ?? "ص"}</Text></View><View style={styles.profileText}><Text style={styles.name}>{staff?.displayName ?? "مستخدم الصيدلية"}</Text><Text style={styles.userName}>@{staff?.username ?? "—"}</Text><Text style={styles.role}>{staff?.role === "owner" ? "مسؤول الصيدلية" : staff?.role === "pharmacist" ? "صيدلي" : staff?.role === "cashier" ? "كاشير" : "عرض فقط"}</Text></View></View>
     <Text style={styles.section}>الجهاز والإشعارات</Text>
     <View style={styles.card}><InfoRow title="الجهاز" detail={device?.deviceName ?? "جارٍ قراءة الجهاز…"} /><InfoRow title="طراز الجهاز" detail={device?.deviceModel ?? "غير متاح"} bordered /><InfoRow title="النظام" detail={`${device?.devicePlatform ?? "—"} ${device?.osVersion ?? ""}`.trim()} bordered /><InfoRow title="إصدار التطبيق" detail={device?.appVersion ?? "—"} bordered /><TouchableOpacity onPress={enablePush} style={styles.actionRow} activeOpacity={0.78}><View style={styles.actionText}><Text style={styles.actionTitle}>إشعارات الهاتف</Text><Text style={styles.actionDetail}>{pushStatus.data?.enabledDevices ? `مفعّلة على ${pushStatus.data.enabledDevices} جهاز/أجهزة` : "فعّل الإذن لاستلام رسائل الأدمن على هاتفك"}</Text></View><Text style={styles.pushPill}>{pushStatus.data?.enabledDevices ? "مفعّلة" : "تفعيل"}</Text></TouchableOpacity><TouchableOpacity onPress={() => router.push("/notifications")} style={[styles.actionRow, styles.border]} activeOpacity={0.78}><View style={styles.actionText}><Text style={styles.actionTitle}>صندوق الإشعارات</Text><Text style={styles.actionDetail}>عرض الرسائل والتنبيهات المستلمة داخل التطبيق</Text></View><Text style={styles.chevron}>‹</Text></TouchableOpacity></View>
-    <Text style={styles.section}>أدوات وإدارة</Text>
-    <View style={styles.card}><ToolRow icon="⚙" title="أدوات الصيدلية" detail="الطابعة، الملصقات، صور الفواتير وبيانات العرض" onPress={() => router.push("/tools")} />{can("staff.manage") ? <ToolRow icon="◉" title="لوحة المسؤول" detail="الأفراد والصلاحيات والجلسات وسجل النشاط" onPress={() => router.push("/staff-admin")} bordered /> : null}</View>
+    <Text style={styles.section}>إدارة التطبيق</Text>
+    <View style={styles.card}><ToolRow icon="⌁" title="بيانات التطبيق" detail="مدة حفظ صور الفواتير وبيانات العرض" onPress={() => router.push("/tools")} />{can("staff.manage") ? <ToolRow icon="◉" title="لوحة المسؤول" detail="الأفراد والصلاحيات والجلسات وسجل النشاط" onPress={() => router.push("/staff-admin")} bordered /> : null}</View>
     <Text style={styles.section}>الأمان</Text>
     <TouchableOpacity onPress={signOut} style={styles.logout} activeOpacity={0.78}><Text style={styles.logoutText}>تسجيل الخروج من هذا الجهاز</Text></TouchableOpacity>
   </ScrollView></ScreenContainer>;

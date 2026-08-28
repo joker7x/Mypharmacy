@@ -5,8 +5,7 @@ import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInpu
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { COLORS, PageHeader, commonStyles } from "@/components/app-ui";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { formatExpiryMonthYear, getExpiryBatches, getNearestExpiryDate, getUnitPrice, getUnitsPerPackage, isExpirySoon, Medication, usePharmacy } from "@/lib/pharmacy-context";
-import { printBarcodeLabel } from "@/lib/printer-service";
+import { formatExpiryMonthYear, getExpiryBatches, getUnitPrice, getUnitsPerPackage, isExpirySoon, Medication, usePharmacy } from "@/lib/pharmacy-context";
 import { ScreenContainer } from "@/components/screen-container";
 import { useStaffAudit } from "@/hooks/use-staff-audit";
 import { trpc } from "@/lib/trpc";
@@ -17,7 +16,7 @@ const emptyForm: FormState = { catalogId: undefined, name: "", category: "", sku
 
 export default function MedicineFormScreen() {
   const { id, catalogId: initialCatalogId } = useLocalSearchParams<{ id?: string; catalogId?: string }>();
-  const { medications, addMedication, updateMedication, deleteMedication, isReady, settings } = usePharmacy();
+  const { medications, addMedication, updateMedication, deleteMedication, isReady } = usePharmacy();
   const audit = useStaffAudit();
   const idParam = Array.isArray(id) ? id[0] : id;
   const initialCatalogIdParam = Array.isArray(initialCatalogId) ? initialCatalogId[0] : initialCatalogId;
@@ -27,7 +26,6 @@ export default function MedicineFormScreen() {
   const [catalogSearch, setCatalogSearch] = useState(typeof initialCatalogIdParam === "string" ? initialCatalogIdParam : "");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [printingLabel, setPrintingLabel] = useState(false);
   const deferredSearch = useDeferredValue(catalogSearch.trim());
   const catalogQuery = trpc.catalog.search.useQuery({ query: deferredSearch.length >= 2 ? deferredSearch : "xx", limit: 12, offset: 0 }, { enabled: !existing && !form.catalogId && deferredSearch.length >= 2, staleTime: 120_000 });
   const directProductQuery = trpc.catalog.product.useQuery({ externalId: typeof initialCatalogIdParam === "string" ? initialCatalogIdParam : "x" }, { enabled: Boolean(initialCatalogIdParam) && !existing });
@@ -74,14 +72,6 @@ export default function MedicineFormScreen() {
     audit({ action: "inventory.item_deleted", entityType: "medication", entityId: existing.id, detail: `تم حذف ${existing.name} من المخزون.` });
     setDeleteOpen(false);
     router.replace("/(tabs)/inventory");
-  };
-  const printLabel = async () => {
-    if (!existing) return;
-    if (!settings.printer.savedPrinter) return Alert.alert("اربط الطابعة أولًا", "افتح الإعدادات واربط Xprinter عبر Bluetooth قبل طباعة ملصق.");
-    setPrintingLabel(true);
-    try { await printBarcodeLabel(settings.printer.savedPrinter, settings.printer, { name: existing.name, barcode: existing.barcode || existing.sku, price: existing.price, expiryMonthYear: formatExpiryMonthYear(getNearestExpiryDate(existing)) }); Alert.alert("تم إرسال الملصق", "تحقق من الطابعة الآن."); }
-    catch (error) { Alert.alert("تعذرت الطباعة", error instanceof Error ? error.message : "حدث خطأ أثناء الاتصال بالطابعة."); }
-    finally { setPrintingLabel(false); }
   };
 
   return (
@@ -146,7 +136,6 @@ export default function MedicineFormScreen() {
           <IconSymbol name="checkmark.circle.fill" size={20} color="#FFFFFF" />
           <Text style={commonStyles.primaryButtonText}>{!isReady ? "جارٍ تجهيز المخزون..." : existing ? "حفظ الكمية" : "إضافة إلى المخزون"}</Text>
         </TouchableOpacity>
-        {existing ? <TouchableOpacity onPress={printLabel} style={styles.printLabelButton} activeOpacity={0.8} disabled={printingLabel}><IconSymbol name="printer.fill" size={18} color={COLORS.primary} /><Text style={styles.printLabelText}>{printingLabel ? "جارٍ إرسال الملصق…" : "طباعة باركود الصنف"}</Text></TouchableOpacity> : null}
         {existing ? <TouchableOpacity onPress={remove} style={styles.deleteButton} activeOpacity={0.8}><IconSymbol name="trash" size={18} color={COLORS.danger} /><Text style={styles.deleteText}>حذف الصنف</Text></TouchableOpacity> : null}
       </ScrollView>
       <BarcodeScanner visible={scannerOpen} onClose={() => setScannerOpen(false)} onScanned={setCatalogSearch} />

@@ -44,7 +44,6 @@ const MAPPING = {
   "arrow.triangle.2.circlepath": "sync",
   "camera.fill": "photo-camera",
   "barcode.viewfinder": "qr-code-scanner",
-  "printer.fill": "print",
   "photo.on.rectangle.angled": "photo-library",
   "eye.fill": "visibility",
   "xmark": "close",
