@@ -85,6 +85,7 @@ const config: ExpoConfig = {
     favicon: "./assets/images/favicon.png",
   },
   plugins: [
+    "./plugins/with-usb-printer.js",
     "expo-router",
     "expo-notifications",
     "expo-sqlite",

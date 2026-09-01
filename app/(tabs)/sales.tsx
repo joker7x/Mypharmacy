@@ -8,13 +8,14 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { CartItem, calculateCashChange, formatCurrency, getUnitPrice, usePharmacy } from "@/lib/pharmacy-context";
 import { ScreenContainer } from "@/components/screen-container";
 import { useStaffAudit } from "@/hooks/use-staff-audit";
+import { isUsbPrintingAvailable, printReceiptUsb } from "@/lib/printer-service";
 import { trpc } from "@/lib/trpc";
 
 type CatalogProduct = { externalId: string; arabicName: string; name: string; barcode: string | null; company: string | null; currentPrice: string | number; unitsPerPackage: number };
 type PaymentMethod = "نقدي" | "بطاقة" | "محفظة";
 
 export default function SalesScreen() {
-  const { medications, completeSale } = usePharmacy();
+  const { medications, completeSale, settings } = usePharmacy();
   const audit = useStaffAudit();
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -46,7 +47,12 @@ export default function SalesScreen() {
     if (!succeeded) return Alert.alert("تعذّر إتمام البيع", "تحقق من الوحدات المتاحة والمبلغ المدفوع ثم حاول مرة أخرى.");
     const paidChange = calculateCashChange(total, received ?? 0);
     audit({ action: "sale.completed", entityType: "sale", entityId: `S-${Date.now().toString().slice(-6)}`, detail: `تم تسجيل فاتورة بيع بقيمة ${total.toFixed(2)} ج.م.`, metadata: { paymentMethod, itemCount: cart.length, total } });
+    const receipt = { receiptNumber: `S-${Date.now().toString().slice(-6)}`, createdAt: new Date().toISOString(), items: cart.map((item) => ({ name: item.name, quantity: item.quantity, unitPrice: item.unitPrice })), total, paymentMethod, cashReceived: received, change: paidChange };
     setCart([]); setPaymentVisible(false); setCashReceived("");
+    if (isUsbPrintingAvailable && settings.printer.savedPrinter) {
+      try { await printReceiptUsb(settings.printer.savedPrinter, receipt, settings.printer.baudRate); Alert.alert("تم البيع والطباعة", "تم حفظ الفاتورة وإرسال الإيصال إلى الطابعة."); return; }
+      catch (error) { Alert.alert("تم تسجيل البيع", `حُفظت الفاتورة لكن تعذرت الطباعة: ${error instanceof Error ? error.message : "تحقق من USB."}`); return; }
+    }
     Alert.alert("تم تسجيل البيع", paymentMethod === "نقدي" ? `تم حفظ الفاتورة. الباقي للعميل ${formatCurrency(paidChange)}.` : `تم حفظ الفاتورة بقيمة ${formatCurrency(total)} عبر ${paymentMethod}.`);
   };
   const handleCheckout = () => { if (!cart.length) return; if (paymentMethod === "نقدي") { setCashReceived(String(total)); setPaymentVisible(true); } else void finishSale(); };
